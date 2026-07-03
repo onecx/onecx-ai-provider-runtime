@@ -1,9 +1,11 @@
-package org.tkit.onecx.ai.provider.runtime.services;
+package org.tkit.onecx.ai.provider.runtime.services.provider;
 
 import java.time.Duration;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+
+import org.tkit.onecx.ai.provider.runtime.config.DispatchConfig;
 
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.chat.ChatModel;
@@ -21,6 +23,11 @@ public class AnthropicProviderAdapter implements ProviderAdapter {
     @Override
     public boolean supports(String type) {
         return "ANTHROPIC".equals(type);
+    }
+
+    @Override
+    public boolean isConfigured(ProviderSnapshotDTO provider) {
+        return provider != null && !isBlank(provider.getApiKey());
     }
 
     @Override
@@ -55,7 +62,4 @@ public class AnthropicProviderAdapter implements ProviderAdapter {
         return configured > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) configured;
     }
 
-    private boolean isBlank(String value) {
-        return value == null || value.trim().isEmpty();
-    }
 }

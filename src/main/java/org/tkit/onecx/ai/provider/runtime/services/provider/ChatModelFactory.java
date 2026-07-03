@@ -1,4 +1,4 @@
-package org.tkit.onecx.ai.provider.runtime.services;
+package org.tkit.onecx.ai.provider.runtime.services.provider;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;

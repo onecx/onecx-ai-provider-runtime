@@ -1,4 +1,4 @@
-package org.tkit.onecx.ai.provider.runtime.services;
+package org.tkit.onecx.ai.provider.runtime.services.agent;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -20,8 +20,13 @@ import jakarta.inject.Inject;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.context.ManagedExecutor;
+import org.tkit.onecx.ai.provider.runtime.config.DispatchConfig;
+import org.tkit.onecx.ai.provider.runtime.services.external.AgentCard;
+import org.tkit.onecx.ai.provider.runtime.services.external.ExternalAgentDiscoveryService;
+import org.tkit.onecx.ai.provider.runtime.services.mcp.McpService;
 import org.tkit.onecx.ai.provider.runtime.services.mcp.McpTool;
 import org.tkit.onecx.ai.provider.runtime.services.mcp.McpToolRegistry;
+import org.tkit.onecx.ai.provider.runtime.services.provider.ChatModelFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

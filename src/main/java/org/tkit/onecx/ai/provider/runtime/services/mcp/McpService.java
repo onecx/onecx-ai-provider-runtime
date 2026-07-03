@@ -1,4 +1,4 @@
-package org.tkit.onecx.ai.provider.runtime.services;
+package org.tkit.onecx.ai.provider.runtime.services.mcp;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -10,8 +10,7 @@ import jakarta.inject.Inject;
 
 import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
-import org.tkit.onecx.ai.provider.runtime.services.mcp.McpTool;
-import org.tkit.onecx.ai.provider.runtime.services.mcp.McpToolRegistry;
+import org.tkit.onecx.ai.provider.runtime.config.DispatchConfig;
 
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.mcp.client.DefaultMcpClient;

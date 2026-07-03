@@ -1,4 +1,4 @@
-package org.tkit.onecx.ai.provider.runtime.services;
+package org.tkit.onecx.ai.provider.runtime.services.agent;
 
 import dev.langchain4j.agentic.UntypedAgent;
 

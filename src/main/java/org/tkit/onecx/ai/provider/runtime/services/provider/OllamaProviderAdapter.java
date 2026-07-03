@@ -1,4 +1,4 @@
-package org.tkit.onecx.ai.provider.runtime.services;
+package org.tkit.onecx.ai.provider.runtime.services.provider;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -6,6 +6,8 @@ import java.util.Map;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+
+import org.tkit.onecx.ai.provider.runtime.config.DispatchConfig;
 
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.ollama.OllamaChatModel;
@@ -24,6 +26,11 @@ public class OllamaProviderAdapter implements ProviderAdapter {
     @Override
     public boolean supports(String type) {
         return "OLLAMA".equals(type);
+    }
+
+    @Override
+    public boolean isConfigured(ProviderSnapshotDTO provider) {
+        return provider != null && !isBlank(provider.getLlmUrl());
     }
 
     @Override
@@ -65,7 +72,4 @@ public class OllamaProviderAdapter implements ProviderAdapter {
         return configured > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) configured;
     }
 
-    private boolean isBlank(String value) {
-        return value == null || value.trim().isEmpty();
-    }
 }

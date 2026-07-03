@@ -1,4 +1,4 @@
-package org.tkit.onecx.ai.provider.runtime.services;
+package org.tkit.onecx.ai.provider.runtime.config;
 
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;

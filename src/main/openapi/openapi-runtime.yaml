@@ -8,6 +8,27 @@ servers:
 tags:
   - name: runtimeInternal
 paths:
+  /internal/runtime/provider-health:
+    post:
+      tags:
+        - runtimeInternal
+      summary: Check whether a provider can be used by the runtime
+      operationId: getProviderHealthStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderHealthRequest'
+      responses:
+        "200":
+          description: Provider health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderHealthStatus'
+        "400":
+          description: Bad provider health request
   /internal/runtime/chat:
     post:
       tags:
@@ -31,6 +52,23 @@ paths:
           description: Bad runtime request
 components:
   schemas:
+    ProviderHealthRequest:
+      type: object
+      required:
+        - provider
+      properties:
+        provider:
+          $ref: '#/components/schemas/ProviderSnapshot'
+    ProviderHealthStatus:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - HEALTHY
+            - UNHEALTHY
     RuntimeChatRequest:
       type: object
       required:
