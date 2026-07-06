@@ -21,7 +21,6 @@ import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderHealthSt
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RuntimeChatRequestDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RuntimeChatResponseDTO;
-import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RuntimeStatusDTO;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 
@@ -41,7 +40,6 @@ class RuntimeRestControllerTest extends AbstractTest {
     void chat_delegatesToRuntimeChatService() {
         RuntimeChatRequestDTO request = chatRequest();
         RuntimeChatResponseDTO serviceResponse = new RuntimeChatResponseDTO();
-        serviceResponse.setStatus(RuntimeStatusDTO.SUCCESS);
         serviceResponse.setMessage("ok");
 
         when(runtimeChatService.chat(request)).thenReturn(serviceResponse);
@@ -79,7 +77,6 @@ class RuntimeRestControllerTest extends AbstractTest {
         chatRequest.setChatMessage(message);
 
         AgentSnapshotDTO rootAgent = new AgentSnapshotDTO();
-        rootAgent.setId("agent-id");
         rootAgent.setName("agent");
 
         RuntimeChatRequestDTO request = new RuntimeChatRequestDTO();

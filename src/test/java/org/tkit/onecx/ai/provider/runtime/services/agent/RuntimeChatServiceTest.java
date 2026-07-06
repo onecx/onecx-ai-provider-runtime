@@ -1,6 +1,7 @@
 package org.tkit.onecx.ai.provider.runtime.services.agent;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -9,6 +10,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.tkit.onecx.ai.provider.runtime.common.RuntimeChatException;
 import org.tkit.onecx.ai.provider.runtime.config.DispatchConfig;
 import org.tkit.onecx.ai.provider.runtime.services.external.ExternalAgentDiscoveryService;
 import org.tkit.onecx.ai.provider.runtime.services.mcp.McpService;
@@ -26,7 +28,6 @@ import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentSnapshotDTO
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ChatMessageDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ChatRequestDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RuntimeChatRequestDTO;
-import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RuntimeStatusDTO;
 import io.quarkus.test.junit.QuarkusTest;
 
 @QuarkusTest
@@ -55,12 +56,16 @@ class RuntimeChatServiceTest {
     }
 
     @Test
-    void chat_withoutRootAgent_returnsFailedResponse() {
-        var response = service.chat(new RuntimeChatRequestDTO());
-
-        assertThat(response.getStatus()).isEqualTo(RuntimeStatusDTO.FAILED);
-        assertThat(response.getErrorType()).isEqualTo("IllegalArgumentException");
-        assertThat(response.getErrorMessage()).isEqualTo("Root agent snapshot is required");
+    void chat_withoutRootAgent_throwsBadRequest() {
+        assertThatThrownBy(() -> service.chat(new RuntimeChatRequestDTO()))
+                .isInstanceOf(RuntimeChatException.class)
+                .satisfies(ex -> {
+                    RuntimeChatException error = (RuntimeChatException) ex;
+                    assertThat(error.getErrorCode()).isEqualTo("RUNTIME_CHAT_REQUEST_INVALID");
+                    assertThat(error.getErrorType()).isEqualTo("IllegalArgumentException");
+                    assertThat(error.getDetail()).isEqualTo("Root agent snapshot is required");
+                    assertThat(error.getStatusCode()).isEqualTo(400);
+                });
     }
 
     @Test
@@ -69,14 +74,12 @@ class RuntimeChatServiceTest {
 
         var response = service.chat(runtimeRequest(rootAgent(), "ping"));
 
-        assertThat(response.getStatus()).isEqualTo(RuntimeStatusDTO.SUCCESS);
         assertThat(response.getMessage()).isEqualTo("pong");
     }
 
     @Test
     void chat_a2aEnabledButGroupHasNoDelegates_fallsBackToRootAgent() {
         AgentGroupSnapshotDTO emptyGroup = new AgentGroupSnapshotDTO();
-        emptyGroup.setId("group-empty");
         emptyGroup.setName("Empty group");
 
         AgentSnapshotDTO rootAgent = rootAgent();
@@ -87,31 +90,37 @@ class RuntimeChatServiceTest {
 
         var response = service.chat(runtimeRequest(rootAgent, "hello"));
 
-        assertThat(response.getStatus()).isEqualTo(RuntimeStatusDTO.SUCCESS);
         assertThat(response.getMessage()).isEqualTo("root answer");
     }
 
     @Test
-    void chat_modelCreationFails_returnsFailedResponse() {
+    void chat_modelCreationFails_throwsServerError() {
         when(chatModelFactory.createChatModel(any())).thenThrow(new IllegalArgumentException("bad model"));
 
-        var response = service.chat(runtimeRequest(rootAgent(), "ping"));
-
-        assertThat(response.getStatus()).isEqualTo(RuntimeStatusDTO.FAILED);
-        assertThat(response.getErrorType()).isEqualTo("IllegalArgumentException");
-        assertThat(response.getErrorMessage()).isEqualTo("bad model");
+        assertThatThrownBy(() -> service.chat(runtimeRequest(rootAgent(), "ping")))
+                .isInstanceOf(RuntimeChatException.class)
+                .satisfies(ex -> {
+                    RuntimeChatException error = (RuntimeChatException) ex;
+                    assertThat(error.getErrorCode()).isEqualTo("RUNTIME_CHAT_FAILED");
+                    assertThat(error.getErrorType()).isEqualTo("IllegalArgumentException");
+                    assertThat(error.getDetail()).isEqualTo("bad model");
+                    assertThat(error.getStatusCode()).isEqualTo(500);
+                });
     }
 
     @Test
-    void chat_runtimeTimeout_returnsTimeoutResponse() {
+    void chat_runtimeTimeout_throwsGatewayTimeout() {
         service.runtimeTimeout = 1L;
         when(chatModelFactory.createChatModel(any())).thenReturn(new SleepingChatModel());
 
-        var response = service.chat(runtimeRequest(rootAgent(), "ping"));
-
-        assertThat(response.getStatus()).isEqualTo(RuntimeStatusDTO.TIMEOUT);
-        assertThat(response.getErrorType()).isEqualTo("TimeoutException");
-        assertThat(response.getErrorMessage()).contains("Dispatch exceeded runtime timeout of 1 seconds");
+        assertThatThrownBy(() -> service.chat(runtimeRequest(rootAgent(), "ping")))
+                .isInstanceOf(RuntimeChatException.class)
+                .satisfies(ex -> {
+                    RuntimeChatException error = (RuntimeChatException) ex;
+                    assertThat(error.getErrorCode()).isEqualTo("RUNTIME_CHAT_TIMEOUT");
+                    assertThat(error.getErrorType()).isEqualTo("TimeoutException");
+                    assertThat(error.getStatusCode()).isEqualTo(504);
+                });
     }
 
     private RuntimeChatRequestDTO runtimeRequest(AgentSnapshotDTO rootAgent, String text) {
@@ -130,7 +139,6 @@ class RuntimeChatServiceTest {
 
     private AgentSnapshotDTO rootAgent() {
         AgentSnapshotDTO agent = new AgentSnapshotDTO();
-        agent.setId("root");
         agent.setName("Root");
         agent.setDescription("Root agent");
         agent.setAdditionalPrompt("Answer directly.");

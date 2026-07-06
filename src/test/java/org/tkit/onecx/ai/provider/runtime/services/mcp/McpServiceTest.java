@@ -160,7 +160,7 @@ class McpServiceTest {
 
     private static ToolSnapshotDTO tool(String url, String apiKey, String type) {
         ToolSnapshotDTO tool = new ToolSnapshotDTO();
-        tool.setId(url);
+        tool.setName(url);
         tool.setType(type);
         tool.setUrl(url);
         tool.setApiKey(apiKey);

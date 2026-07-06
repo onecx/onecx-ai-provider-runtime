@@ -2,12 +2,19 @@ package org.tkit.onecx.ai.provider.runtime.rs.controllers;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.validation.ConstraintViolationException;
 import jakarta.ws.rs.core.Response;
 
+import org.jboss.resteasy.reactive.ClientWebApplicationException;
+import org.jboss.resteasy.reactive.RestResponse;
+import org.jboss.resteasy.reactive.server.ServerExceptionMapper;
+import org.tkit.onecx.ai.provider.runtime.common.RuntimeChatException;
+import org.tkit.onecx.ai.provider.runtime.rs.mappers.ExceptionMapper;
 import org.tkit.onecx.ai.provider.runtime.services.agent.RuntimeChatService;
 import org.tkit.onecx.ai.provider.runtime.services.provider.ProviderHealthService;
 
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.RuntimeInternalApi;
+import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProblemDetailResponseDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderHealthRequestDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RuntimeChatRequestDTO;
 
@@ -20,6 +27,9 @@ public class RuntimeRestController implements RuntimeInternalApi {
     @Inject
     ProviderHealthService providerHealthService;
 
+    @Inject
+    ExceptionMapper exceptionMapper;
+
     @Override
     public Response chat(RuntimeChatRequestDTO runtimeChatRequestDTO) {
         return Response.ok(runtimeChatService.chat(runtimeChatRequestDTO)).build();
@@ -28,5 +38,20 @@ public class RuntimeRestController implements RuntimeInternalApi {
     @Override
     public Response getProviderHealthStatus(ProviderHealthRequestDTO providerHealthRequestDTO) {
         return Response.ok(providerHealthService.getProviderHealthStatus(providerHealthRequestDTO)).build();
+    }
+
+    @ServerExceptionMapper
+    public RestResponse<ProblemDetailResponseDTO> constraint(ConstraintViolationException ex) {
+        return exceptionMapper.constraint(ex);
+    }
+
+    @ServerExceptionMapper
+    public Response restException(ClientWebApplicationException ex) {
+        return exceptionMapper.clientException(ex);
+    }
+
+    @ServerExceptionMapper
+    public RestResponse<ProblemDetailResponseDTO> runtimeChatException(RuntimeChatException ex) {
+        return exceptionMapper.runtimeChat(ex);
     }
 }

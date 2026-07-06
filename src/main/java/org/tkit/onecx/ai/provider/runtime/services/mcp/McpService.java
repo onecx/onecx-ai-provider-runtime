@@ -48,7 +48,7 @@ public class McpService {
                 client.checkHealth();
                 List<ToolSpecification> specs = receiveToolSpecifications(client);
                 return specs.stream()
-                        .map(spec -> new McpTool(tool.getId(), tool.getUrl(), spec, client))
+                        .map(spec -> new McpTool(tool.getName(), tool.getUrl(), spec, client))
                         .toList();
             } catch (Exception ex) {
                 log.warn("MCP server not available {}: {}: {}", tool.getUrl(), ex.getClass().getSimpleName(),

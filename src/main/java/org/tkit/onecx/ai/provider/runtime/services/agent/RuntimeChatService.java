@@ -17,9 +17,11 @@ import java.util.stream.Collectors;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.core.Response;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.context.ManagedExecutor;
+import org.tkit.onecx.ai.provider.runtime.common.RuntimeChatException;
 import org.tkit.onecx.ai.provider.runtime.config.DispatchConfig;
 import org.tkit.onecx.ai.provider.runtime.services.external.AgentCard;
 import org.tkit.onecx.ai.provider.runtime.services.external.ExternalAgentDiscoveryService;
@@ -62,7 +64,6 @@ import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ChatRequestDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ExternalAgentSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RuntimeChatRequestDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RuntimeChatResponseDTO;
-import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RuntimeStatusDTO;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -101,23 +102,16 @@ public class RuntimeChatService {
 
     public RuntimeChatResponseDTO chat(RuntimeChatRequestDTO request) {
         if (request == null || request.getRootAgent() == null) {
-            return failed("IllegalArgumentException", "Root agent snapshot is required");
+            throw new RuntimeChatException("RUNTIME_CHAT_REQUEST_INVALID", "IllegalArgumentException",
+                    "Root agent snapshot is required", Response.Status.BAD_REQUEST);
         }
         CompletableFuture<RuntimeChatResponseDTO> future = CompletableFuture.supplyAsync(() -> invoke(request),
                 runtimeExecutor());
         try {
             return future.get(runtimeTimeoutSeconds(), TimeUnit.SECONDS);
-        } catch (TimeoutException ex) {
-            future.cancel(true);
-            RuntimeChatResponseDTO response = new RuntimeChatResponseDTO();
-            response.setStatus(RuntimeStatusDTO.TIMEOUT);
-            response.setMessage("The agent did not complete the request before the runtime timeout. Please try again.");
-            response.setErrorType(TimeoutException.class.getSimpleName());
-            response.setErrorMessage("Dispatch exceeded runtime timeout of " + runtimeTimeoutSeconds() + " seconds");
-            return response;
         } catch (Exception ex) {
             Throwable cause = rootCause(ex);
-            return failed(cause.getClass().getSimpleName(), cause.getMessage());
+            throw runtimeChatException(cause, "Runtime chat invocation failed");
         }
     }
 
@@ -125,7 +119,6 @@ public class RuntimeChatService {
         try {
             String message = invokeRootResponse(request.getRootAgent(), request.getChatRequest());
             RuntimeChatResponseDTO response = new RuntimeChatResponseDTO();
-            response.setStatus(RuntimeStatusDTO.SUCCESS);
             response.setMessage(message != null ? message : "");
             return response;
         } catch (Exception ex) {
@@ -133,17 +126,8 @@ public class RuntimeChatService {
             log.warn("Runtime invocation failed for root agent '{}': {}: {}", request.getRootAgent().getName(),
                     cause.getClass().getSimpleName(), cause.getMessage());
             log.debug("Runtime invocation failure details", cause);
-            return failed(cause.getClass().getSimpleName(), cause.getMessage());
+            throw runtimeChatException(cause, "Runtime chat invocation failed");
         }
-    }
-
-    private RuntimeChatResponseDTO failed(String errorType, String errorMessage) {
-        RuntimeChatResponseDTO response = new RuntimeChatResponseDTO();
-        response.setStatus(RuntimeStatusDTO.FAILED);
-        response.setMessage("The agent could not complete the request. Please try again.");
-        response.setErrorType(errorType);
-        response.setErrorMessage(errorMessage);
-        return response;
     }
 
     private String invokeRootResponse(AgentSnapshotDTO agent, ChatRequestDTO request) {
@@ -160,7 +144,7 @@ public class RuntimeChatService {
 
     private String executeGroups(AgentSnapshotDTO agent, ChatRequestDTO request) {
         return agent.getGroups().stream()
-                .filter(group -> group != null && group.getId() != null)
+                .filter(group -> group != null && group.getName() != null)
                 .sorted(Comparator.comparing(group -> safeString(group.getName()).toLowerCase()))
                 .map(group -> executeGroup(agent, group, request))
                 .filter(result -> !isBlank(result))
@@ -216,7 +200,7 @@ public class RuntimeChatService {
                 return "";
             }
             SupervisorAgent supervisor = AgenticServices.supervisorBuilder()
-                    .name("a2a-supervisor-" + safeString(group.getId()))
+                    .name("a2a-supervisor-" + safeString(group.getName()))
                     .description("Routes the user request to the most relevant configured agents")
                     .chatModel(chatModelFactory.createChatModel(rootAgent))
                     .subAgents(candidates.stream().map(RuntimeAgent::agent).toList())
@@ -237,7 +221,7 @@ public class RuntimeChatService {
     private String executeSequentialGroup(AgentGroupSnapshotDTO group, List<RuntimeAgent> runtimeAgents,
             ChatRequestDTO request) {
         UntypedAgent workflow = AgenticServices.sequenceBuilder()
-                .name("a2a-sequence-" + safeString(group.getId()))
+                .name("a2a-sequence-" + safeString(group.getName()))
                 .description("Runs explicitly ordered agents for the configured group")
                 .subAgents(runtimeAgents.stream().map(RuntimeAgent::agent).toList())
                 .beforeCall(scope -> scope.writeStates(agentInput(request)))
@@ -250,7 +234,7 @@ public class RuntimeChatService {
     private String executeParallelGroup(AgentGroupSnapshotDTO group, List<RuntimeAgent> runtimeAgents,
             ChatRequestDTO request) {
         UntypedAgent workflow = AgenticServices.parallelBuilder()
-                .name("a2a-parallel-" + safeString(group.getId()))
+                .name("a2a-parallel-" + safeString(group.getName()))
                 .description("Runs explicitly additive agents for the configured group")
                 .subAgents(runtimeAgents.stream().map(RuntimeAgent::agent).toList())
                 .beforeCall(scope -> scope.writeStates(agentInput(request)))
@@ -305,7 +289,7 @@ public class RuntimeChatService {
         List<RuntimeAgentDelegate> agents = new ArrayList<>();
         if (group.getAgents() != null) {
             for (AgentSnapshotDTO agent : group.getAgents()) {
-                if (isCallableLocalAgent(agent)) {
+                if (agent != null) {
                     agents.add(new RuntimeAgentDelegate(runtimeName(agent), runtimeDescription(agent),
                             () -> buildLocalAgent(agent, request, List.of())));
                 }
@@ -504,7 +488,7 @@ public class RuntimeChatService {
     private RuntimeAgent lazySupervisorCandidate(String name, String description, Supplier<RuntimeAgent> supplier,
             AgentGroupSnapshotDTO group, String fallbackMessage) {
         LazySupervisorAgenticAction action = new LazySupervisorAgenticAction(name, description, supplier,
-                group != null ? group.getId() : null, fallbackMessage);
+                group != null ? group.getName() : null, fallbackMessage);
         AgentExecutor executor = action.toAgentExecutor();
         return new RuntimeAgent(name, description, executor, new AgenticWorkflowInvocationAdapter(name, executor), null);
     }
@@ -671,11 +655,6 @@ public class RuntimeChatService {
         return configured > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) configured;
     }
 
-    private boolean isCallableLocalAgent(AgentSnapshotDTO agent) {
-        String status = safeString(agent != null ? agent.getStatus() : null);
-        return agent != null && ("".equals(status) || "LIVE".equals(status));
-    }
-
     private boolean isCallableExternalAgent(ExternalAgentSnapshotDTO externalAgent) {
         return externalAgent != null && Boolean.TRUE.equals(externalAgent.getEnabled())
                 && !isBlank(externalAgent.getDiscoveryUrl());
@@ -765,6 +744,20 @@ public class RuntimeChatService {
             result = result.getCause();
         }
         return result;
+    }
+
+    private RuntimeChatException runtimeChatException(Throwable cause, String fallbackMessage) {
+        if (cause instanceof RuntimeChatException runtimeChatException) {
+            return runtimeChatException;
+        }
+        String message = !isBlank(cause != null ? cause.getMessage() : null)
+                ? cause.getMessage()
+                : fallbackMessage;
+        String type = cause != null ? cause.getClass().getSimpleName() : RuntimeException.class.getSimpleName();
+        String errorCode = cause instanceof TimeoutException ? "RUNTIME_CHAT_TIMEOUT" : "RUNTIME_CHAT_FAILED";
+        Response.Status status = cause instanceof TimeoutException ? Response.Status.GATEWAY_TIMEOUT
+                : Response.Status.INTERNAL_SERVER_ERROR;
+        return new RuntimeChatException(errorCode, type, message, status);
     }
 
     private interface LocalChatAgent {

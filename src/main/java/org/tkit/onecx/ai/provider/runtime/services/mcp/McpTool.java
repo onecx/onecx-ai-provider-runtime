@@ -6,7 +6,7 @@ import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 
 public record McpTool(
-        String serverId,
+        String serverName,
         String serverUrl,
         ToolSpecification toolSpecification,
         McpClient client) {

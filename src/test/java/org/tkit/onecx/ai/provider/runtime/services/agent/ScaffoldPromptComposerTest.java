@@ -3,10 +3,10 @@ package org.tkit.onecx.ai.provider.runtime.services.agent;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
-import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentFilterDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ChatRequestDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RequestContextDTO;
@@ -55,20 +55,17 @@ class ScaffoldPromptComposerTest {
     }
 
     @Test
-    void compose_includesRequestContextDirective() {
+    void compose_includesAiContextDirective() {
         AgentSnapshotDTO agent = new AgentSnapshotDTO();
         agent.setAdditionalPrompt("Agent prompt");
 
         ChatRequestDTO request = new ChatRequestDTO();
         RequestContextDTO context = new RequestContextDTO();
-        AgentFilterDTO filter = new AgentFilterDTO();
-        filter.setKey(" APP_ID ");
-        filter.setValue(" onecx ");
-        context.setFilter(filter);
+        context.setAiContext(Map.of(" APP_ID ", " onecx ", " locale ", " en-US "));
         request.setRequestContext(context);
 
         assertThat(composer.compose(agent, request))
-                .isEqualTo("Agent prompt\n\nRequest context filter: APP_ID=onecx");
+                .isEqualTo("Agent prompt\n\nAI context:\nAPP_ID=onecx\nlocale=en-US");
     }
 
     @Test
@@ -78,10 +75,7 @@ class ScaffoldPromptComposerTest {
 
         ChatRequestDTO request = new ChatRequestDTO();
         RequestContextDTO context = new RequestContextDTO();
-        AgentFilterDTO filter = new AgentFilterDTO();
-        filter.setKey("APP_ID");
-        filter.setValue(" ");
-        context.setFilter(filter);
+        context.setAiContext(Map.of("APP_ID", " "));
         request.setRequestContext(context);
 
         assertThat(composer.compose(agent, request)).isEmpty();

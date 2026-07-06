@@ -50,6 +50,10 @@ paths:
                 $ref: '#/components/schemas/RuntimeChatResponse'
         "400":
           description: Bad runtime request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailResponse'
 components:
   schemas:
     ProviderHealthRequest:
@@ -81,23 +85,9 @@ components:
           $ref: '#/components/schemas/AgentSnapshot'
     RuntimeChatResponse:
       type: object
-      required:
-        - status
       properties:
         message:
           type: string
-        status:
-          $ref: '#/components/schemas/RuntimeStatus'
-        errorType:
-          type: string
-        errorMessage:
-          type: string
-    RuntimeStatus:
-      type: string
-      enum:
-        - SUCCESS
-        - FAILED
-        - TIMEOUT
     ChatRequest:
       type: object
       properties:
@@ -110,19 +100,10 @@ components:
     RequestContext:
       type: object
       properties:
-        filter:
-          $ref: '#/components/schemas/AgentFilter'
         aiContext:
           type: object
           additionalProperties:
             type: string
-    AgentFilter:
-      type: object
-      properties:
-        key:
-          type: string
-        value:
-          type: string
     ChatMessage:
       type: object
       properties:
@@ -149,8 +130,6 @@ components:
     AgentSnapshot:
       type: object
       properties:
-        id:
-          type: string
         name:
           type: string
         description:
@@ -159,8 +138,6 @@ components:
           type: string
         a2aEnabled:
           type: boolean
-        status:
-          type: string
         model:
           $ref: '#/components/schemas/ModelSnapshot'
         scaffold:
@@ -176,8 +153,6 @@ components:
     ProviderSnapshot:
       type: object
       properties:
-        id:
-          type: string
         name:
           type: string
         type:
@@ -193,8 +168,6 @@ components:
     ModelSnapshot:
       type: object
       properties:
-        id:
-          type: string
         name:
           type: string
         modelIdentifier:
@@ -208,18 +181,9 @@ components:
     ScaffoldSnapshot:
       type: object
       properties:
-        id:
-          type: string
-        source:
-          type: string
-          enum:
-            - TENANT
-            - GLOBAL
         name:
           type: string
         systemPrompt:
-          type: string
-        sourceProduct:
           type: string
         skills:
           type: array
@@ -228,13 +192,6 @@ components:
     SkillSnapshot:
       type: object
       properties:
-        id:
-          type: string
-        source:
-          type: string
-          enum:
-            - TENANT
-            - GLOBAL
         name:
           type: string
         description:
@@ -244,13 +201,6 @@ components:
     ToolSnapshot:
       type: object
       properties:
-        id:
-          type: string
-        source:
-          type: string
-          enum:
-            - TENANT
-            - GLOBAL
         name:
           type: string
         description:
@@ -266,8 +216,6 @@ components:
     AgentGroupSnapshot:
       type: object
       properties:
-        id:
-          type: string
         name:
           type: string
         description:
@@ -289,8 +237,6 @@ components:
     ExternalAgentSnapshot:
       type: object
       properties:
-        id:
-          type: string
         name:
           type: string
         description:
@@ -303,3 +249,36 @@ components:
           type: string
         enabled:
           type: boolean
+    OffsetDateTime:
+      format: date-time
+      type: string
+      example: 2022-03-10T12:15:50-04:00
+    ProblemDetailResponse:
+      type: object
+      properties:
+        errorCode:
+          type: string
+        detail:
+          type: string
+        params:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProblemDetailParam'
+        invalidParams:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProblemDetailInvalidParam'
+    ProblemDetailParam:
+      type: object
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+    ProblemDetailInvalidParam:
+      type: object
+      properties:
+        name:
+          type: string
+        message:
+          type: string

@@ -38,8 +38,8 @@ public class RuntimeSkillService {
         String name = normalize(skill.getName());
         String instruction = normalize(skill.getInstruction());
         if (isBlank(name) || isBlank(instruction)) {
-            log.warn("Skipping scaffold skill for agent '{}': skillId={}, skillName={}, hasInstruction={}",
-                    runtimeName(agent), skill.getId(), skill.getName(), !isBlank(instruction));
+            log.warn("Skipping scaffold skill for agent '{}': skillName={}, hasInstruction={}",
+                    runtimeName(agent), skill.getName(), !isBlank(instruction));
             return null;
         }
         String description = normalize(skill.getDescription());

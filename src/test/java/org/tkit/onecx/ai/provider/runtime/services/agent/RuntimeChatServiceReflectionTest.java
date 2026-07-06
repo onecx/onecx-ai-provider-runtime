@@ -105,7 +105,6 @@ class RuntimeChatServiceReflectionTest {
                 .contains("Peer description");
 
         AgentGroupSnapshotDTO group = new AgentGroupSnapshotDTO();
-        group.setId("group-1");
         group.setDescription("Group description");
         group.setRoutingInstructions("Route carefully");
         String supervisorRequest = (String) invoke("supervisorRequest",
@@ -236,16 +235,13 @@ class RuntimeChatServiceReflectionTest {
     @Test
     void privateRemoteAndDelegateDiscoveryHelpers_coverSkipsAndSorting() throws Exception {
         AgentSnapshotDTO live = agent("B local", "Local B");
-        live.setStatus("LIVE");
         AgentSnapshotDTO defaultStatus = agent("A local", "Local A");
-        AgentSnapshotDTO offline = agent("Offline", "Nope");
-        offline.setStatus("DISABLED");
 
         ExternalAgentSnapshotDTO remote = externalAgent("C remote", "Remote C", true, "http://discover", null);
         ExternalAgentSnapshotDTO disabled = externalAgent("Disabled", "Nope", false, "http://disabled", null);
 
         AgentGroupSnapshotDTO group = new AgentGroupSnapshotDTO();
-        group.setAgents(List.of(live, offline, defaultStatus));
+        group.setAgents(List.of(live, defaultStatus));
         group.setExternalAgents(List.of(disabled, remote));
 
         @SuppressWarnings("unchecked")
