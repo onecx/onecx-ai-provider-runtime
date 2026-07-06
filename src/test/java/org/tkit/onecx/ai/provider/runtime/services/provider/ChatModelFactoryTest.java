@@ -14,11 +14,14 @@ import jakarta.enterprise.util.TypeLiteral;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.tkit.onecx.ai.provider.runtime.test.AbstractTest;
 
 import dev.langchain4j.model.chat.ChatModel;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentSnapshotDTO;
+import io.quarkus.test.junit.QuarkusTest;
 
-class ChatModelFactoryTest {
+@QuarkusTest
+class ChatModelFactoryTest extends AbstractTest {
 
     FakeProviderAdapter ollamaAdapter;
     ChatModelFactory factory;

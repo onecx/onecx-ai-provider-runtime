@@ -8,11 +8,14 @@ import static org.tkit.onecx.ai.provider.runtime.services.provider.ProviderAdapt
 import jakarta.inject.Inject;
 
 import org.junit.jupiter.api.Test;
+import org.tkit.onecx.ai.provider.runtime.test.AbstractTest;
+
 
 import io.quarkus.test.junit.QuarkusTest;
+class OpenAiProviderAdapterTest {
 
 @QuarkusTest
-class OpenAiProviderAdapterTest {
+class OpenAiProviderAdapterTest extends AbstractTest {
 
     @Inject
     OpenAiProviderAdapter adapter;

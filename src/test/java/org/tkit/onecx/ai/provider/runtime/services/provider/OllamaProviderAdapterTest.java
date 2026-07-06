@@ -8,8 +8,12 @@ import static org.tkit.onecx.ai.provider.runtime.services.provider.ProviderAdapt
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.tkit.onecx.ai.provider.runtime.test.AbstractTest;
 
-class OllamaProviderAdapterTest {
+import io.quarkus.test.junit.QuarkusTest;
+
+@QuarkusTest
+class OllamaProviderAdapterTest extends AbstractTest {
 
     OllamaProviderAdapter adapter;
 

@@ -12,14 +12,17 @@ import jakarta.enterprise.util.TypeLiteral;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.tkit.onecx.ai.provider.runtime.test.AbstractTest;
 
 import dev.langchain4j.model.chat.ChatModel;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderHealthRequestDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderHealthStatusDTO.StatusEnum;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderSnapshotDTO;
+import io.quarkus.test.junit.QuarkusTest;
 
-class ProviderHealthServiceTest {
+@QuarkusTest
+class ProviderHealthServiceTest extends AbstractTest {
 
     ProviderHealthService service;
 
