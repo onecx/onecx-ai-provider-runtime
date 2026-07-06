@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.tkit.onecx.ai.provider.runtime.services.agent.RuntimeChatService;
 import org.tkit.onecx.ai.provider.runtime.services.provider.ProviderHealthService;
 import org.tkit.onecx.ai.provider.runtime.test.AbstractTest;
+import org.tkit.quarkus.security.test.GenerateKeycloakClient;
 
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ChatMessageDTO;
@@ -25,6 +26,7 @@ import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 
 @QuarkusTest
+@GenerateKeycloakClient(clientName = "testClient", scopes = { "ocx-agent:read", "ocx-agent:write" })
 class RuntimeRestControllerTest extends AbstractTest {
 
     @Inject
