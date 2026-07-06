@@ -3,6 +3,7 @@ package org.tkit.onecx.ai.provider.runtime.services.provider;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.tkit.onecx.ai.provider.runtime.services.provider.ProviderAdapterTestSupport.agent;
+import static org.tkit.onecx.ai.provider.runtime.services.provider.ProviderAdapterTestSupport.dispatchConfig;
 import static org.tkit.onecx.ai.provider.runtime.services.provider.ProviderAdapterTestSupport.provider;
 
 import jakarta.inject.Inject;
@@ -28,6 +29,18 @@ class AnthropicProviderAdapterTest {
     void createChatModel_withValidAgent_returnsModel() {
         assertThat(adapter
                 .createChatModel(agent("ANTHROPIC", "http://localhost:8080", "claude-3-haiku-20240307", "sk-ant-test")))
+                .isNotNull();
+    }
+
+    @Test
+    void createChatModel_clampsInvalidRetryConfiguration() {
+        AnthropicProviderAdapter localAdapter = new AnthropicProviderAdapter();
+        localAdapter.dispatchConfig = dispatchConfig(-1);
+        assertThat(localAdapter.createChatModel(agent("ANTHROPIC", null, "claude-3-haiku-20240307", "sk-ant-test")))
+                .isNotNull();
+
+        localAdapter.dispatchConfig = dispatchConfig((long) Integer.MAX_VALUE + 1L);
+        assertThat(localAdapter.createChatModel(agent("ANTHROPIC", null, "claude-3-haiku-20240307", "sk-ant-test")))
                 .isNotNull();
     }
 

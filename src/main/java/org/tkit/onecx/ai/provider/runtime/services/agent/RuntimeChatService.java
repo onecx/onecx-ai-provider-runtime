@@ -617,7 +617,7 @@ public class RuntimeChatService {
         if (isBlank(name)) {
             name = textField(item, "tool_name");
         }
-        if (!availableToolNames.contains(name)) {
+        if (isBlank(name) || !availableToolNames.contains(name)) {
             return;
         }
         requests.add(ToolExecutionRequest.builder()

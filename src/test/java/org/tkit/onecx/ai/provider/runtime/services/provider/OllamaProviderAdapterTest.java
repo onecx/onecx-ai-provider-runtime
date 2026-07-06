@@ -35,6 +35,16 @@ class OllamaProviderAdapterTest extends AbstractTest {
     }
 
     @Test
+    void createChatModel_clampsInvalidRetryConfiguration() {
+        adapter.dispatchConfig = dispatchConfig(-1);
+        assertThat(adapter.createChatModel(agent("OLLAMA", "http://localhost:11434", "mistral", null))).isNotNull();
+
+        adapter.dispatchConfig = dispatchConfig((long) Integer.MAX_VALUE + 1L);
+        assertThat(adapter.createChatModel(agent("OLLAMA", "http://localhost:11434", "mistral", "Bearer token")))
+                .isNotNull();
+    }
+
+    @Test
     void createChatModel_withoutLlmUrl_failsClearly() {
         assertThatThrownBy(() -> adapter.createChatModel(agent("OLLAMA", "", "mistral", null)))
                 .isInstanceOf(IllegalArgumentException.class)

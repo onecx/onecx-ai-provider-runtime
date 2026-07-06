@@ -12,6 +12,10 @@ class ProviderAdapterTestSupport {
     }
 
     static DispatchConfig dispatchConfig() {
+        return dispatchConfig(0);
+    }
+
+    static DispatchConfig dispatchConfig(long maxRetries) {
         return new DispatchConfig() {
             @Override
             public MCPConfig mcpConfig() {
@@ -28,7 +32,7 @@ class ProviderAdapterTestSupport {
 
                     @Override
                     public long maxRetries() {
-                        return 0;
+                        return maxRetries;
                     }
 
                     @Override
