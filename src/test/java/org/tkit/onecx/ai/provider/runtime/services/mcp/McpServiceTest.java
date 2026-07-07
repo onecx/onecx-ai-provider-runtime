@@ -12,16 +12,19 @@ import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 import org.tkit.onecx.ai.provider.runtime.config.DispatchConfig;
 
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.mcp.client.DefaultMcpClient;
 import dev.langchain4j.mcp.client.McpClient;
+import dev.langchain4j.mcp.client.McpHeadersSupplier;
 import dev.langchain4j.mcp.client.transport.http.StreamableHttpMcpTransport;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolSnapshotDTO;
+import io.quarkiverse.langchain4j.mcp.auth.McpClientAuthProvider;
 import io.quarkus.test.junit.QuarkusTest;
 
 @QuarkusTest
@@ -91,6 +94,30 @@ class McpServiceTest {
     }
 
     @Test
+    void createToolRegistry_returnsEmpty_whenOAuthProviderMissing() {
+        var service = serviceWithConfig();
+        var tool = tool("http://oauth", null, "MCP", "OAUTH2");
+        var agent = new AgentSnapshotDTO();
+        agent.setTools(List.of(tool));
+
+        StreamableHttpMcpTransport.Builder transportBuilder = mock(StreamableHttpMcpTransport.Builder.class);
+        when(transportBuilder.url("http://oauth")).thenReturn(transportBuilder);
+        when(transportBuilder.timeout(Duration.ofSeconds(1))).thenReturn(transportBuilder);
+        when(transportBuilder.logRequests(false)).thenReturn(transportBuilder);
+        when(transportBuilder.logResponses(false)).thenReturn(transportBuilder);
+
+        try (MockedStatic<StreamableHttpMcpTransport> transportStatic = mockStatic(StreamableHttpMcpTransport.class);
+                MockedStatic<McpClientAuthProvider> authStatic = mockStatic(McpClientAuthProvider.class)) {
+            transportStatic.when(StreamableHttpMcpTransport::builder).thenReturn(transportBuilder);
+            authStatic.when(() -> McpClientAuthProvider.resolve(null)).thenReturn(java.util.Optional.empty());
+
+            var registry = service.createToolRegistry(agent);
+
+            assertThat(registry.tools()).isEmpty();
+        }
+    }
+
+    @Test
     void receiveToolSpecifications_returnsClientTools() {
         var service = serviceWithConfig();
         McpClient client = mock(McpClient.class);
@@ -139,9 +166,150 @@ class McpServiceTest {
         }
     }
 
+    @Test
+    void createMcpClient_buildsClientWithDynamicOAuthAuthorizationHeader() {
+        var service = serviceWithConfig();
+        var tool = tool("http://example.org", null, "MCP", "OAUTH2");
+        service.mcpAuthHeaders = mock(McpAuthHeaders.class);
+        when(service.mcpAuthHeaders.authorizationHeaders(tool, Map.of()))
+                .thenReturn(Map.of("Authorization", "Bearer first"))
+                .thenReturn(Map.of("Authorization", "Bearer second"));
+
+        StreamableHttpMcpTransport.Builder transportBuilder = mock(StreamableHttpMcpTransport.Builder.class);
+        StreamableHttpMcpTransport transport = mock(StreamableHttpMcpTransport.class);
+        DefaultMcpClient.Builder clientBuilder = mock(DefaultMcpClient.Builder.class);
+        DefaultMcpClient client = mock(DefaultMcpClient.class);
+        ArgumentCaptor<McpHeadersSupplier> headersCaptor = ArgumentCaptor.forClass(McpHeadersSupplier.class);
+
+        when(transportBuilder.url("http://example.org")).thenReturn(transportBuilder);
+        when(transportBuilder.timeout(Duration.ofSeconds(1))).thenReturn(transportBuilder);
+        when(transportBuilder.logRequests(false)).thenReturn(transportBuilder);
+        when(transportBuilder.logResponses(false)).thenReturn(transportBuilder);
+        when(transportBuilder.customHeaders(headersCaptor.capture())).thenReturn(transportBuilder);
+        when(transportBuilder.build()).thenReturn(transport);
+        when(clientBuilder.transport(transport)).thenReturn(clientBuilder);
+        when(clientBuilder.build()).thenReturn(client);
+
+        try (MockedStatic<StreamableHttpMcpTransport> transportStatic = mockStatic(StreamableHttpMcpTransport.class);
+                MockedStatic<DefaultMcpClient> clientStatic = mockStatic(DefaultMcpClient.class)) {
+            transportStatic.when(StreamableHttpMcpTransport::builder).thenReturn(transportBuilder);
+            clientStatic.when(DefaultMcpClient::builder).thenReturn(clientBuilder);
+
+            assertThat(service.createMcpClient(tool)).isSameAs(client);
+            assertThat(headersCaptor.getValue().apply(null)).containsEntry("Authorization", "Bearer second");
+        }
+    }
+
+    @Test
+    void createMcpClient_propagatesApmPrincipalTokenWithApiKeyAuthorizationHeader() {
+        var service = serviceWithConfig();
+        service.mcpPropagatedHeaders = mock(McpPropagatedHeaders.class);
+        when(service.mcpPropagatedHeaders.currentHeaders())
+                .thenReturn(Map.of("apm-principal-token", "principal-token"));
+        var tool = tool("http://example.org", "Bearer api-key", "MCP");
+
+        StreamableHttpMcpTransport.Builder transportBuilder = mock(StreamableHttpMcpTransport.Builder.class);
+        StreamableHttpMcpTransport transport = mock(StreamableHttpMcpTransport.class);
+        DefaultMcpClient.Builder clientBuilder = mock(DefaultMcpClient.Builder.class);
+        DefaultMcpClient client = mock(DefaultMcpClient.class);
+
+        Map<String, String> expectedHeaders = Map.of(
+                "Authorization", "Bearer api-key",
+                "apm-principal-token", "principal-token");
+        when(transportBuilder.url("http://example.org")).thenReturn(transportBuilder);
+        when(transportBuilder.timeout(Duration.ofSeconds(1))).thenReturn(transportBuilder);
+        when(transportBuilder.logRequests(false)).thenReturn(transportBuilder);
+        when(transportBuilder.logResponses(false)).thenReturn(transportBuilder);
+        when(transportBuilder.customHeaders(expectedHeaders)).thenReturn(transportBuilder);
+        when(transportBuilder.build()).thenReturn(transport);
+        when(clientBuilder.transport(transport)).thenReturn(clientBuilder);
+        when(clientBuilder.build()).thenReturn(client);
+
+        try (MockedStatic<StreamableHttpMcpTransport> transportStatic = mockStatic(StreamableHttpMcpTransport.class);
+                MockedStatic<DefaultMcpClient> clientStatic = mockStatic(DefaultMcpClient.class)) {
+            transportStatic.when(StreamableHttpMcpTransport::builder).thenReturn(transportBuilder);
+            clientStatic.when(DefaultMcpClient::builder).thenReturn(clientBuilder);
+
+            assertThat(service.createMcpClient(tool)).isSameAs(client);
+        }
+    }
+
+    @Test
+    void createMcpClient_propagatesApmPrincipalTokenWithoutAuthorization() {
+        var service = serviceWithConfig();
+        service.mcpPropagatedHeaders = mock(McpPropagatedHeaders.class);
+        when(service.mcpPropagatedHeaders.currentHeaders())
+                .thenReturn(Map.of("apm-principal-token", "principal-token"));
+        var tool = tool("http://example.org", null, "MCP");
+
+        StreamableHttpMcpTransport.Builder transportBuilder = mock(StreamableHttpMcpTransport.Builder.class);
+        StreamableHttpMcpTransport transport = mock(StreamableHttpMcpTransport.class);
+        DefaultMcpClient.Builder clientBuilder = mock(DefaultMcpClient.Builder.class);
+        DefaultMcpClient client = mock(DefaultMcpClient.class);
+
+        Map<String, String> expectedHeaders = Map.of("apm-principal-token", "principal-token");
+        when(transportBuilder.url("http://example.org")).thenReturn(transportBuilder);
+        when(transportBuilder.timeout(Duration.ofSeconds(1))).thenReturn(transportBuilder);
+        when(transportBuilder.logRequests(false)).thenReturn(transportBuilder);
+        when(transportBuilder.logResponses(false)).thenReturn(transportBuilder);
+        when(transportBuilder.customHeaders(expectedHeaders)).thenReturn(transportBuilder);
+        when(transportBuilder.build()).thenReturn(transport);
+        when(clientBuilder.transport(transport)).thenReturn(clientBuilder);
+        when(clientBuilder.build()).thenReturn(client);
+
+        try (MockedStatic<StreamableHttpMcpTransport> transportStatic = mockStatic(StreamableHttpMcpTransport.class);
+                MockedStatic<DefaultMcpClient> clientStatic = mockStatic(DefaultMcpClient.class)) {
+            transportStatic.when(StreamableHttpMcpTransport::builder).thenReturn(transportBuilder);
+            clientStatic.when(DefaultMcpClient::builder).thenReturn(clientBuilder);
+
+            assertThat(service.createMcpClient(tool)).isSameAs(client);
+        }
+    }
+
+    @Test
+    void createMcpClient_propagatesApmPrincipalTokenWithOAuthAuthorizationHeader() {
+        var service = serviceWithConfig();
+        var propagatedHeaders = Map.of("apm-principal-token", "principal-token");
+        var tool = tool("http://example.org", null, "MCP", "OAUTH2");
+        service.mcpPropagatedHeaders = mock(McpPropagatedHeaders.class);
+        service.mcpAuthHeaders = mock(McpAuthHeaders.class);
+        when(service.mcpPropagatedHeaders.currentHeaders()).thenReturn(propagatedHeaders);
+        when(service.mcpAuthHeaders.authorizationHeaders(tool, propagatedHeaders))
+                .thenReturn(Map.of("Authorization", "Bearer first"))
+                .thenReturn(Map.of("Authorization", "Bearer second"));
+
+        StreamableHttpMcpTransport.Builder transportBuilder = mock(StreamableHttpMcpTransport.Builder.class);
+        StreamableHttpMcpTransport transport = mock(StreamableHttpMcpTransport.class);
+        DefaultMcpClient.Builder clientBuilder = mock(DefaultMcpClient.Builder.class);
+        DefaultMcpClient client = mock(DefaultMcpClient.class);
+        ArgumentCaptor<McpHeadersSupplier> headersCaptor = ArgumentCaptor.forClass(McpHeadersSupplier.class);
+
+        when(transportBuilder.url("http://example.org")).thenReturn(transportBuilder);
+        when(transportBuilder.timeout(Duration.ofSeconds(1))).thenReturn(transportBuilder);
+        when(transportBuilder.logRequests(false)).thenReturn(transportBuilder);
+        when(transportBuilder.logResponses(false)).thenReturn(transportBuilder);
+        when(transportBuilder.customHeaders(headersCaptor.capture())).thenReturn(transportBuilder);
+        when(transportBuilder.build()).thenReturn(transport);
+        when(clientBuilder.transport(transport)).thenReturn(clientBuilder);
+        when(clientBuilder.build()).thenReturn(client);
+
+        try (MockedStatic<StreamableHttpMcpTransport> transportStatic = mockStatic(StreamableHttpMcpTransport.class);
+                MockedStatic<DefaultMcpClient> clientStatic = mockStatic(DefaultMcpClient.class)) {
+            transportStatic.when(StreamableHttpMcpTransport::builder).thenReturn(transportBuilder);
+            clientStatic.when(DefaultMcpClient::builder).thenReturn(clientBuilder);
+
+            assertThat(service.createMcpClient(tool)).isSameAs(client);
+            assertThat(headersCaptor.getValue().apply(null))
+                    .containsEntry("Authorization", "Bearer second")
+                    .containsEntry("apm-principal-token", "principal-token");
+        }
+    }
+
     private static McpService serviceWithConfig() {
         var service = new McpService();
         service.dispatchConfig = dispatchConfig();
+        service.mcpAuthHeaders = new McpAuthHeaders();
+        service.mcpPropagatedHeaders = new McpPropagatedHeaders();
         return service;
     }
 
@@ -159,11 +327,16 @@ class McpServiceTest {
     }
 
     private static ToolSnapshotDTO tool(String url, String apiKey, String type) {
+        return tool(url, apiKey, type, null);
+    }
+
+    private static ToolSnapshotDTO tool(String url, String apiKey, String type, String authMode) {
         ToolSnapshotDTO tool = new ToolSnapshotDTO();
         tool.setName(url);
         tool.setType(type);
         tool.setUrl(url);
         tool.setApiKey(apiKey);
+        tool.setAuthMode(authMode);
         return tool;
     }
 

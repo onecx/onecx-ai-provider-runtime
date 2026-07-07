@@ -171,6 +171,12 @@ h| Version
 | 
 | 1.10.0
 
+| quarkus-langchain4j-oidc-client-mcp-auth-provider
+
+| https://quarkus.io/extensions/io.quarkiverse.langchain4j/quarkus-langchain4j-oidc-client-mcp-auth-provider/[Link]
+| https://quarkus.io/guides/security-openid-connect-client-reference[Link]
+| 1.10.0
+
 | quarkus-langchain4j-agentic
 
 | 

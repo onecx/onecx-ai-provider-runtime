@@ -27,6 +27,12 @@ public class McpService {
     @Inject
     DispatchConfig dispatchConfig;
 
+    @Inject
+    McpAuthHeaders mcpAuthHeaders;
+
+    @Inject
+    McpPropagatedHeaders mcpPropagatedHeaders;
+
     public McpToolRegistry createToolRegistry(AgentSnapshotDTO agent) {
         if (agent == null || agent.getTools() == null || agent.getTools().isEmpty()) {
             return McpToolRegistry.empty();
@@ -83,8 +89,18 @@ public class McpService {
                 .logRequests(dispatchConfig.mcpConfig().logRequests())
                 .logResponses(dispatchConfig.mcpConfig().logResponse());
 
-        if (!isBlank(tool.getApiKey())) {
-            transportBuilder.customHeaders(Map.of("Authorization", tool.getApiKey()));
+        Map<String, String> propagatedHeaders = mcpPropagatedHeaders.currentHeaders();
+        if (isOAuth2(tool)) {
+            Map<String, String> authorizationHeaders = mcpAuthHeaders.authorizationHeaders(tool, propagatedHeaders);
+            if (authorizationHeaders.isEmpty()) {
+                throw new IllegalStateException("OAuth2 MCP authorization is not available");
+            }
+            transportBuilder.customHeaders(context -> mergeHeaders(propagatedHeaders,
+                    mcpAuthHeaders.authorizationHeaders(tool, propagatedHeaders)));
+        } else if (!isBlank(tool.getApiKey())) {
+            transportBuilder.customHeaders(mergeHeaders(propagatedHeaders, Map.of("Authorization", tool.getApiKey())));
+        } else if (!propagatedHeaders.isEmpty()) {
+            transportBuilder.customHeaders(propagatedHeaders);
         }
 
         return DefaultMcpClient.builder()
@@ -94,6 +110,24 @@ public class McpService {
 
     private String safeString(Object value) {
         return value == null ? "" : value.toString();
+    }
+
+    private boolean isOAuth2(ToolSnapshotDTO tool) {
+        return "OAUTH2".equalsIgnoreCase(safeString(tool != null ? tool.getAuthMode() : null));
+    }
+
+    private Map<String, String> mergeHeaders(Map<String, String> first, Map<String, String> second) {
+        if ((first == null || first.isEmpty()) && (second == null || second.isEmpty())) {
+            return Map.of();
+        }
+        java.util.LinkedHashMap<String, String> headers = new java.util.LinkedHashMap<>();
+        if (first != null) {
+            headers.putAll(first);
+        }
+        if (second != null) {
+            headers.putAll(second);
+        }
+        return Map.copyOf(headers);
     }
 
     private boolean isBlank(String value) {
