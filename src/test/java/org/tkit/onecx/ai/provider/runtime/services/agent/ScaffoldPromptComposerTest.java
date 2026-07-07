@@ -3,7 +3,6 @@ package org.tkit.onecx.ai.provider.runtime.services.agent;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
-import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -61,7 +60,7 @@ class ScaffoldPromptComposerTest {
 
         ChatRequestDTO request = new ChatRequestDTO();
         RequestContextDTO context = new RequestContextDTO();
-        context.setAiContext(Map.of(" APP_ID ", " onecx ", " locale ", " en-US "));
+        context.setAiContext(List.of("APP_ID=onecx", "locale=en-US"));
         request.setRequestContext(context);
 
         assertThat(composer.compose(agent, request))
@@ -75,7 +74,7 @@ class ScaffoldPromptComposerTest {
 
         ChatRequestDTO request = new ChatRequestDTO();
         RequestContextDTO context = new RequestContextDTO();
-        context.setAiContext(Map.of("APP_ID", " "));
+        context.setAiContext(List.of());
         request.setRequestContext(context);
 
         assertThat(composer.compose(agent, request)).isEmpty();
