@@ -1,0 +1,11 @@
+app:
+ name: runtime
+ image:
+  repository: "onecx/onecx-ai-provider-runtime"
+  keycloak:
+   client:
+    enabled: true
+  microservice:
+   spec:
+    description: OneCX AI Provider Runtime
+    name: OneCX AI Provider Runtime

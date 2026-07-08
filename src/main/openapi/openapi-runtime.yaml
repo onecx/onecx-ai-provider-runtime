@@ -1,0 +1,297 @@
+---
+openapi: 3.0.3
+info:
+  title: onecx-ai-provider-runtime internal service
+  version: 1.0.0
+servers:
+  - url: "http://onecx-ai-provider-runtime:8080"
+tags:
+  - name: runtimeInternal
+paths:
+  /internal/runtime/provider-health:
+    post:
+      security:
+        - oauth2: [ ocx-agent:read ]
+      tags:
+        - runtimeInternal
+      summary: Check whether a provider can be used by the runtime
+      operationId: getProviderHealthStatus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderHealthRequest'
+      responses:
+        "200":
+          description: Provider health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderHealthStatus'
+        "400":
+          description: Bad provider health request
+  /internal/runtime/chat:
+    post:
+      security:
+        - oauth2: [ ocx-agent:write ]
+      tags:
+        - runtimeInternal
+      summary: Invoke an AI runtime from a resolved configuration snapshot
+      operationId: chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeChatRequest'
+      responses:
+        "200":
+          description: Runtime invocation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeChatResponse'
+        "400":
+          description: Bad runtime request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailResponse'
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://oauth.simple.api/token
+          scopes:
+            ocx-agent:read: Grants read access
+            ocx-agent:write: Grants write access
+  schemas:
+    ProviderHealthRequest:
+      type: object
+      required:
+        - provider
+      properties:
+        provider:
+          $ref: '#/components/schemas/ProviderSnapshot'
+    ProviderHealthStatus:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - HEALTHY
+            - UNHEALTHY
+    RuntimeChatRequest:
+      type: object
+      required:
+        - chatRequest
+        - rootAgent
+      properties:
+        chatRequest:
+          $ref: '#/components/schemas/ChatRequest'
+        rootAgent:
+          $ref: '#/components/schemas/AgentSnapshot'
+    RuntimeChatResponse:
+      type: object
+      properties:
+        message:
+          type: string
+    ChatRequest:
+      type: object
+      properties:
+        requestContext:
+          $ref: '#/components/schemas/RequestContext'
+        chatMessage:
+          $ref: '#/components/schemas/ChatMessage'
+        conversation:
+          $ref: '#/components/schemas/Conversation'
+    RequestContext:
+      type: object
+      properties:
+        aiContext:
+          type: array
+          items:
+            type: string
+    ChatMessage:
+      type: object
+      properties:
+        conversationId:
+          type: string
+        message:
+          type: string
+        type:
+          type: string
+        creationDate:
+          type: integer
+          format: int64
+    Conversation:
+      type: object
+      properties:
+        conversationId:
+          type: string
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        conversationType:
+          type: string
+    AgentSnapshot:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        additionalPrompt:
+          type: string
+        a2aEnabled:
+          type: boolean
+        model:
+          $ref: '#/components/schemas/ModelSnapshot'
+        scaffold:
+          $ref: '#/components/schemas/ScaffoldSnapshot'
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolSnapshot'
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentGroupSnapshot'
+    ProviderSnapshot:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        description:
+          type: string
+        llmUrl:
+          type: string
+        apiKey:
+          type: string
+        authMode:
+          type: string
+    ModelSnapshot:
+      type: object
+      properties:
+        name:
+          type: string
+        modelIdentifier:
+          type: string
+        modelConfig:
+          type: string
+        communicationMode:
+          type: string
+        provider:
+          $ref: '#/components/schemas/ProviderSnapshot'
+    ScaffoldSnapshot:
+      type: object
+      properties:
+        name:
+          type: string
+        systemPrompt:
+          type: string
+        skills:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkillSnapshot'
+    SkillSnapshot:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        instruction:
+          type: string
+    ToolSnapshot:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+        url:
+          type: string
+        apiKey:
+          type: string
+        authMode:
+          type: string
+    AgentGroupSnapshot:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        routingInstructions:
+          type: string
+        orchestrationMode:
+          type: string
+        responseStrategy:
+          type: string
+        agents:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentSnapshot'
+        externalAgents:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalAgentSnapshot'
+    ExternalAgentSnapshot:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        discoveryUrl:
+          type: string
+        apiKey:
+          type: string
+        authMode:
+          type: string
+        enabled:
+          type: boolean
+    OffsetDateTime:
+      format: date-time
+      type: string
+      example: 2022-03-10T12:15:50-04:00
+    ProblemDetailResponse:
+      type: object
+      properties:
+        errorCode:
+          type: string
+        detail:
+          type: string
+        params:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProblemDetailParam'
+        invalidParams:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProblemDetailInvalidParam'
+    ProblemDetailParam:
+      type: object
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+    ProblemDetailInvalidParam:
+      type: object
+      properties:
+        name:
+          type: string
+        message:
+          type: string
