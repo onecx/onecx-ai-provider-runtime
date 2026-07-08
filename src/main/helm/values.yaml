@@ -2,20 +2,9 @@ app:
  name: runtime
  image:
   repository: "onecx/onecx-ai-provider-runtime"
- operator:
-  # Permission
-  permission:
-   enabled: true
-   spec:
-    permissions:
-     runtime:
-      write: permission on PUT, POST, PATCH requests, where objects are saved or updated
   keycloak:
    client:
     enabled: true
-    spec:
-     kcConfig:
-      defaultClientScopes: [ ocx-pm:read ]
   microservice:
    spec:
     description: OneCX AI Provider Runtime

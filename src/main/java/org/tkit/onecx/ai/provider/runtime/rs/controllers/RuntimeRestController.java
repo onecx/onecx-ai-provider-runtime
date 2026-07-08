@@ -5,7 +5,6 @@ import jakarta.inject.Inject;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.ws.rs.core.Response;
 
-import org.jboss.resteasy.reactive.ClientWebApplicationException;
 import org.jboss.resteasy.reactive.RestResponse;
 import org.jboss.resteasy.reactive.server.ServerExceptionMapper;
 import org.tkit.onecx.ai.provider.runtime.common.RuntimeChatException;
@@ -43,11 +42,6 @@ public class RuntimeRestController implements RuntimeInternalApi {
     @ServerExceptionMapper
     public RestResponse<ProblemDetailResponseDTO> constraint(ConstraintViolationException ex) {
         return exceptionMapper.constraint(ex);
-    }
-
-    @ServerExceptionMapper
-    public Response restException(ClientWebApplicationException ex) {
-        return exceptionMapper.clientException(ex);
     }
 
     @ServerExceptionMapper

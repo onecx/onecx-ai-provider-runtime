@@ -15,7 +15,6 @@ quarkus.http.auth.permission.health.policy=permit
 quarkus.http.auth.permission.default.paths=/*
 quarkus.http.auth.permission.default.policy=authenticated
 onecx.permissions.application-id=${quarkus.application.name}
-# propagate the apm-principal-token from requests we receive
 org.eclipse.microprofile.rest.client.propagateHeaders=apm-principal-token
 quarkus.fault-tolerance."org.tkit.onecx.ai.provider.runtime.services.mcp.McpService/receiveToolSpecifications".retry.max-retries=${onecx.ai.dispatch.mcp.max-tool-execution-retries:3}
 quarkus.fault-tolerance."org.tkit.onecx.ai.provider.runtime.services.mcp.McpService/receiveToolSpecifications".retry.delay=${onecx.ai.dispatch.mcp.tool-execution-retry-delay:1000}
@@ -23,24 +22,6 @@ quarkus.langchain4j.chat-model.provider=ollama
 %prod.quarkus.oidc-client.client-id=${quarkus.application.name}
 ----
 ====
-
-== MCP OAuth2 client credentials
-
-MCP tools can use `authMode=OAUTH2` to call OAuth2-secured MCP servers.
-The runtime uses the Quarkus LangChain4j OIDC MCP auth provider and the standard `quarkus.oidc-client.*` properties to acquire and refresh client-credentials access tokens.
-All OAuth2-secured MCP tools use this default application machine token; the MCP tool name is not used as an OIDC client name.
-
-[source,properties]
-----
-quarkus.oidc-client.auth-server-url=https://issuer.example.com/realms/runtime
-quarkus.oidc-client.client-id=onecx-ai-provider-runtime
-quarkus.oidc-client.credentials.secret=${OIDC_CLIENT_SECRET}
-quarkus.oidc-client.scopes=mcp-server-scope
-----
-
-If `authMode=OAUTH2` is set and no OAuth2 token can be resolved, the MCP server is skipped instead of being called without authorization.
-Tools without `authMode=OAUTH2` keep the existing behavior: a non-empty `apiKey` is sent as the `Authorization` header, and tools without an API key are called without authorization.
-For all MCP tools, the incoming `apm-principal-token` request header is propagated to outgoing MCP calls when present.
 
 == Extensions
 .Extensions List
@@ -60,20 +41,9 @@ app:
  name: runtime
  image:
   repository: "onecx/onecx-ai-provider-runtime"
- operator:
-  # Permission
-  permission:
-   enabled: true
-   spec:
-    permissions:
-     runtime:
-      write: permission on PUT, POST, PATCH requests, where objects are saved or updated
   keycloak:
    client:
     enabled: true
-    spec:
-     kcConfig:
-      defaultClientScopes: [ ocx-pm:read ]
   microservice:
    spec:
     description: OneCX AI Provider Runtime
