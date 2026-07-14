@@ -145,8 +145,7 @@ class RuntimeChatServiceTest {
                 .map(UserMessage.class::cast)
                 .map(RuntimeChatServiceTest::extractUserMessageText)
                 .toList();
-        assertThat(userPayloads).isNotEmpty();
-        assertThat(userPayloads).anyMatch(payload -> payload.contains("Conversation history:")
+        assertThat(userPayloads).isNotEmpty().anyMatch(payload -> payload.contains("Conversation history:")
                 && payload.contains("USER: first")
                 && payload.contains("ASSISTANT: second")
                 && payload.contains("Current user message:")

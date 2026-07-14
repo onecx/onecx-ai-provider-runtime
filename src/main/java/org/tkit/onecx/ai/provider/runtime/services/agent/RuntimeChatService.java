@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -799,18 +800,14 @@ public class RuntimeChatService {
         private final String name;
         private final String description;
         private final LocalChatAgent chatAgent;
-        private final Function<String, String> messageComposer;
-
-        private LocalAgenticAction(String name, String description, LocalChatAgent chatAgent) {
-            this(name, description, chatAgent, Function.identity());
-        }
+        private final UnaryOperator<String> messageComposer;
 
         private LocalAgenticAction(String name, String description, LocalChatAgent chatAgent,
-                Function<String, String> messageComposer) {
+                UnaryOperator<String> messageComposer) {
             this.name = name;
             this.description = description;
             this.chatAgent = chatAgent;
-            this.messageComposer = messageComposer != null ? messageComposer : Function.identity();
+            this.messageComposer = messageComposer != null ? messageComposer : UnaryOperator.identity();
         }
 
         public String invoke(AgenticScope scope) {

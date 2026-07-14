@@ -378,9 +378,11 @@ class RuntimeChatServiceReflectionTest {
         Class<?> agentType = Class.forName(RuntimeChatService.class.getName() + "$LocalChatAgent");
         Object chatAgent = java.lang.reflect.Proxy.newProxyInstance(agentType.getClassLoader(), new Class[] { agentType },
                 (proxy, method, args) -> args != null && args.length > 0 ? args[0] : "");
-        Constructor<?> constructor = actionType.getDeclaredConstructor(String.class, String.class, agentType);
+        Constructor<?> constructor = actionType.getDeclaredConstructor(String.class, String.class, agentType,
+                java.util.function.UnaryOperator.class);
         constructor.setAccessible(true);
-        return constructor.newInstance("Local Agent", "Local description", chatAgent);
+        return constructor.newInstance("Local Agent", "Local description", chatAgent,
+                java.util.function.UnaryOperator.identity());
     }
 
     private Object invoke(String name, Class<?>[] parameterTypes, Object... args) throws Exception {
