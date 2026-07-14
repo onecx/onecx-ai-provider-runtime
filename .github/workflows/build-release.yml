@@ -9,4 +9,4 @@ jobs:
     secrets: inherit
     with:
       native: true
-      helmEventTargetRepository: onecx/onecx-theme
+      helmEventTargetRepository: onecx/onecx-ai-provider
