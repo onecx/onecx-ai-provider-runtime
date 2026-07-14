@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.lang.reflect.Method;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +21,7 @@ import org.tkit.onecx.ai.provider.runtime.services.provider.ChatModelFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
@@ -27,6 +29,7 @@ import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentGroupSnapsh
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ChatMessageDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ChatRequestDTO;
+import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ConversationDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RuntimeChatRequestDTO;
 import io.quarkus.test.junit.QuarkusTest;
 
@@ -123,6 +126,32 @@ class RuntimeChatServiceTest {
                 });
     }
 
+    @Test
+    void chat_includesConversationHistoryInLlmRequest() {
+        CapturingChatModel model = new CapturingChatModel("pong");
+        when(chatModelFactory.createChatModel(any())).thenReturn(model);
+
+        RuntimeChatRequestDTO request = runtimeRequest(rootAgent(), "current question");
+        ConversationDTO conversation = new ConversationDTO();
+        conversation.setHistory(List.of(chatMessage("USER", "first"), chatMessage("ASSISTANT", "second")));
+        request.getChatRequest().setConversation(conversation);
+
+        var response = service.chat(request);
+
+        assertThat(response.getMessage()).isEqualTo("pong");
+        assertThat(model.lastRequest).isNotNull();
+        List<String> userPayloads = model.lastRequest.messages().stream()
+                .filter(UserMessage.class::isInstance)
+                .map(UserMessage.class::cast)
+                .map(RuntimeChatServiceTest::extractUserMessageText)
+                .toList();
+        assertThat(userPayloads).isNotEmpty().anyMatch(payload -> payload.contains("Conversation history:")
+                && payload.contains("USER: first")
+                && payload.contains("ASSISTANT: second")
+                && payload.contains("Current user message:")
+                && payload.contains("current question"));
+    }
+
     private RuntimeChatRequestDTO runtimeRequest(AgentSnapshotDTO rootAgent, String text) {
         ChatMessageDTO message = new ChatMessageDTO();
         message.setType("USER");
@@ -145,6 +174,29 @@ class RuntimeChatServiceTest {
         return agent;
     }
 
+    private ChatMessageDTO chatMessage(String type, String text) {
+        ChatMessageDTO message = new ChatMessageDTO();
+        message.setType(type);
+        message.setMessage(text);
+        return message;
+    }
+
+    private static String extractUserMessageText(UserMessage message) {
+        try {
+            Method singleText = UserMessage.class.getMethod("singleText");
+            Object value = singleText.invoke(message);
+            return value != null ? value.toString() : "";
+        } catch (Exception ignored) {
+            try {
+                Method text = UserMessage.class.getMethod("text");
+                Object value = text.invoke(message);
+                return value != null ? value.toString() : "";
+            } catch (Exception ex) {
+                return message.toString();
+            }
+        }
+    }
+
     private DispatchConfig dispatchConfig() {
         DispatchConfig dispatchConfig = mock(DispatchConfig.class);
         DispatchConfig.MCPConfig mcpConfig = mock(DispatchConfig.MCPConfig.class);
@@ -163,6 +215,24 @@ class RuntimeChatServiceTest {
 
         @Override
         public ChatResponse doChat(ChatRequest chatRequest) {
+            return ChatResponse.builder()
+                    .aiMessage(AiMessage.from(response))
+                    .build();
+        }
+    }
+
+    private static final class CapturingChatModel implements ChatModel {
+
+        private final String response;
+        private volatile ChatRequest lastRequest;
+
+        private CapturingChatModel(String response) {
+            this.response = response;
+        }
+
+        @Override
+        public ChatResponse doChat(ChatRequest chatRequest) {
+            this.lastRequest = chatRequest;
             return ChatResponse.builder()
                     .aiMessage(AiMessage.from(response))
                     .build();

@@ -96,7 +96,7 @@ class McpServiceTest {
     @Test
     void createToolRegistry_returnsEmpty_whenOAuthProviderMissing() {
         var service = serviceWithConfig();
-        var tool = tool("http://oauth", null, "MCP", "OAUTH2");
+        var tool = tool("http://oauth", null, "MCP", "OAUTH");
         var agent = new AgentSnapshotDTO();
         agent.setTools(List.of(tool));
 
@@ -169,7 +169,7 @@ class McpServiceTest {
     @Test
     void createMcpClient_buildsClientWithDynamicOAuthAuthorizationHeader() {
         var service = serviceWithConfig();
-        var tool = tool("http://example.org", null, "MCP", "OAUTH2");
+        var tool = tool("http://example.org", null, "MCP", "OAUTH");
         service.mcpAuthHeaders = mock(McpAuthHeaders.class);
         when(service.mcpAuthHeaders.authorizationHeaders(tool, Map.of()))
                 .thenReturn(Map.of("Authorization", "Bearer first"))
@@ -270,7 +270,7 @@ class McpServiceTest {
     void createMcpClient_propagatesApmPrincipalTokenWithOAuthAuthorizationHeader() {
         var service = serviceWithConfig();
         var propagatedHeaders = Map.of("apm-principal-token", "principal-token");
-        var tool = tool("http://example.org", null, "MCP", "OAUTH2");
+        var tool = tool("http://example.org", null, "MCP", "OAUTH");
         service.mcpPropagatedHeaders = mock(McpPropagatedHeaders.class);
         service.mcpAuthHeaders = mock(McpAuthHeaders.class);
         when(service.mcpPropagatedHeaders.currentHeaders()).thenReturn(propagatedHeaders);

@@ -95,8 +95,12 @@ public class McpService {
             if (authorizationHeaders.isEmpty()) {
                 throw new IllegalStateException("OAuth2 MCP authorization is not available");
             }
-            transportBuilder.customHeaders(context -> mergeHeaders(propagatedHeaders,
-                    mcpAuthHeaders.authorizationHeaders(tool, propagatedHeaders)));
+            transportBuilder.customHeaders(context -> {
+                Map<String, String> refreshedAuthorizationHeaders = mcpAuthHeaders.authorizationHeaders(tool,
+                        propagatedHeaders);
+                return mergeHeaders(propagatedHeaders,
+                        refreshedAuthorizationHeaders.isEmpty() ? authorizationHeaders : refreshedAuthorizationHeaders);
+            });
         } else if (!isBlank(tool.getApiKey())) {
             transportBuilder.customHeaders(mergeHeaders(propagatedHeaders, Map.of("Authorization", tool.getApiKey())));
         } else if (!propagatedHeaders.isEmpty()) {
@@ -113,7 +117,7 @@ public class McpService {
     }
 
     private boolean isOAuth2(ToolSnapshotDTO tool) {
-        return "OAUTH2".equalsIgnoreCase(safeString(tool != null ? tool.getAuthMode() : null));
+        return "OAUTH".equalsIgnoreCase(safeString(tool != null ? tool.getAuthMode() : null));
     }
 
     private Map<String, String> mergeHeaders(Map<String, String> first, Map<String, String> second) {
