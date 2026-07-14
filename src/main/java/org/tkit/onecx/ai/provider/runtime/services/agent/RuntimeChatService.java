@@ -276,7 +276,8 @@ public class RuntimeChatService {
         }
 
         LocalChatAgent chatAgent = builder.build();
-        LocalAgenticAction action = new LocalAgenticAction(runtimeName(agent), runtimeDescription(agent), chatAgent);
+        LocalAgenticAction action = new LocalAgenticAction(runtimeName(agent), runtimeDescription(agent), chatAgent,
+                message -> userMessage(request, message));
         AgentExecutor executor = action.toAgentExecutor();
         return new RuntimeAgent(runtimeName(agent), runtimeDescription(agent), executor,
                 new AgenticWorkflowInvocationAdapter(runtimeName(agent), executor), toolRegistry);
@@ -798,11 +799,18 @@ public class RuntimeChatService {
         private final String name;
         private final String description;
         private final LocalChatAgent chatAgent;
+        private final Function<String, String> messageComposer;
 
         private LocalAgenticAction(String name, String description, LocalChatAgent chatAgent) {
+            this(name, description, chatAgent, Function.identity());
+        }
+
+        private LocalAgenticAction(String name, String description, LocalChatAgent chatAgent,
+                Function<String, String> messageComposer) {
             this.name = name;
             this.description = description;
             this.chatAgent = chatAgent;
+            this.messageComposer = messageComposer != null ? messageComposer : Function.identity();
         }
 
         public String invoke(AgenticScope scope) {
@@ -811,7 +819,7 @@ public class RuntimeChatService {
             if (blank(resolvedMessage) && scope != null) {
                 resolvedMessage = scope.contextAsConversation();
             }
-            return chatAgent.chat(resolvedMessage);
+            return chatAgent.chat(messageComposer.apply(resolvedMessage));
         }
 
         private AgentExecutor toAgentExecutor() {
