@@ -336,7 +336,7 @@ public class RuntimeChatService {
         for (McpTool tool : toolRegistry.tools()) {
             executors.put(tool.toolSpecification(), (request, memoryId) -> {
                 log.info("Executing MCP tool call: tool={}, argumentsPresent={}, arguments={}", request.name(),
-                        !isBlank(request.arguments()),request.arguments());
+                        !isBlank(request.arguments()), request.arguments());
                 return tool.execute(request);
             });
         }
