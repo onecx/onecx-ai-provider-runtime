@@ -335,8 +335,8 @@ public class RuntimeChatService {
         Map<ToolSpecification, ToolExecutor> executors = new LinkedHashMap<>();
         for (McpTool tool : toolRegistry.tools()) {
             executors.put(tool.toolSpecification(), (request, memoryId) -> {
-                log.info("Executing MCP tool call: tool={}, argumentsPresent={}", request.name(),
-                        !isBlank(request.arguments()));
+                log.info("Executing MCP tool call: tool={}, argumentsPresent={}, arguments={}", request.name(),
+                        !isBlank(request.arguments()),request.arguments());
                 return tool.execute(request);
             });
         }
