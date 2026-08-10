@@ -23,6 +23,7 @@ import dev.langchain4j.mcp.client.McpHeadersSupplier;
 import dev.langchain4j.mcp.client.transport.http.StreamableHttpMcpTransport;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentSnapshotDTO;
+import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolRuleSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolSnapshotDTO;
 import io.quarkiverse.langchain4j.mcp.auth.McpClientAuthProvider;
 import io.quarkus.test.junit.QuarkusTest;
@@ -91,6 +92,90 @@ class McpServiceTest {
         var registry = service.createToolRegistry(agent);
 
         assertThat(registry.tools()).isEmpty();
+    }
+
+    @Test
+    void createToolRegistry_filtersToolsByAllowRules_andDeniesUnlistedTools() {
+        var service = new TestableMcpService();
+        service.dispatchConfig = dispatchConfig();
+        service.enforcementEnabled = true;
+        service.legacyAllowAll = false;
+
+        McpClient client = mock(McpClient.class);
+        when(client.listTools()).thenReturn(List.of(toolSpec("tool-a"), toolSpec("tool-b"), toolSpec("tool-c")));
+        service.registerClient("http://ok", client);
+
+        var tool = tool("http://ok", null, "MCP");
+        tool.setToolRules(List.of(
+                rule("tool-a", ToolRuleSnapshotDTO.AllowedEnum.ALLOW),
+                rule("tool-b", ToolRuleSnapshotDTO.AllowedEnum.DENY)));
+        var agent = new AgentSnapshotDTO();
+        agent.setTools(List.of(tool));
+
+        var registry = service.createToolRegistry(agent);
+
+        assertThat(registry.getToolSpecifications()).extracting(ToolSpecification::name)
+                .containsExactly("tool-a");
+    }
+
+    @Test
+    void createToolRegistry_allowsAll_whenNoRulesAndLegacyAllowAll() {
+        var service = new TestableMcpService();
+        service.dispatchConfig = dispatchConfig();
+        service.enforcementEnabled = true;
+        service.legacyAllowAll = true;
+
+        McpClient client = mock(McpClient.class);
+        when(client.listTools()).thenReturn(List.of(toolSpec("tool-a")));
+        service.registerClient("http://ok", client);
+
+        var agent = new AgentSnapshotDTO();
+        agent.setTools(List.of(tool("http://ok", null, "MCP")));
+
+        var registry = service.createToolRegistry(agent);
+
+        assertThat(registry.getToolSpecifications()).extracting(ToolSpecification::name)
+                .containsExactly("tool-a");
+    }
+
+    @Test
+    void createToolRegistry_deniesAll_whenNoRulesAndNoLegacyAllowAll() {
+        var service = new TestableMcpService();
+        service.dispatchConfig = dispatchConfig();
+        service.enforcementEnabled = true;
+        service.legacyAllowAll = false;
+
+        McpClient client = mock(McpClient.class);
+        when(client.listTools()).thenReturn(List.of(toolSpec("tool-a")));
+        service.registerClient("http://ok", client);
+
+        var agent = new AgentSnapshotDTO();
+        agent.setTools(List.of(tool("http://ok", null, "MCP")));
+
+        var registry = service.createToolRegistry(agent);
+
+        assertThat(registry.tools()).isEmpty();
+    }
+
+    @Test
+    void createToolRegistry_ignoresRules_whenEnforcementDisabled() {
+        var service = new TestableMcpService();
+        service.dispatchConfig = dispatchConfig();
+        service.enforcementEnabled = false;
+
+        McpClient client = mock(McpClient.class);
+        when(client.listTools()).thenReturn(List.of(toolSpec("tool-a")));
+        service.registerClient("http://ok", client);
+
+        var tool = tool("http://ok", null, "MCP");
+        tool.setToolRules(List.of(rule("tool-a", ToolRuleSnapshotDTO.AllowedEnum.DENY)));
+        var agent = new AgentSnapshotDTO();
+        agent.setTools(List.of(tool));
+
+        var registry = service.createToolRegistry(agent);
+
+        assertThat(registry.getToolSpecifications()).extracting(ToolSpecification::name)
+                .containsExactly("tool-a");
     }
 
     @Test
@@ -346,6 +431,13 @@ class McpServiceTest {
                 .description("desc")
                 .parameters(JsonObjectSchema.builder().build())
                 .build();
+    }
+
+    private static ToolRuleSnapshotDTO rule(String name, ToolRuleSnapshotDTO.AllowedEnum allowed) {
+        var rule = new ToolRuleSnapshotDTO();
+        rule.setToolName(name);
+        rule.setAllowed(allowed);
+        return rule;
     }
 
     static class TestableMcpService extends McpService {

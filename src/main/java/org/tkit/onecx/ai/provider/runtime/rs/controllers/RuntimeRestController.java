@@ -10,12 +10,14 @@ import org.jboss.resteasy.reactive.server.ServerExceptionMapper;
 import org.tkit.onecx.ai.provider.runtime.common.RuntimeChatException;
 import org.tkit.onecx.ai.provider.runtime.rs.mappers.ExceptionMapper;
 import org.tkit.onecx.ai.provider.runtime.services.agent.RuntimeChatService;
+import org.tkit.onecx.ai.provider.runtime.services.mcp.McpService;
 import org.tkit.onecx.ai.provider.runtime.services.provider.ProviderHealthService;
 
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.RuntimeInternalApi;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProblemDetailResponseDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderHealthRequestDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RuntimeChatRequestDTO;
+import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolDiscoveryRequestDTO;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -29,6 +31,9 @@ public class RuntimeRestController implements RuntimeInternalApi {
     ProviderHealthService providerHealthService;
 
     @Inject
+    McpService mcpService;
+
+    @Inject
     ExceptionMapper exceptionMapper;
 
     @Override
@@ -39,6 +44,16 @@ public class RuntimeRestController implements RuntimeInternalApi {
     @Override
     public Response getProviderHealthStatus(ProviderHealthRequestDTO providerHealthRequestDTO) {
         return Response.ok(providerHealthService.getProviderHealthStatus(providerHealthRequestDTO)).build();
+    }
+
+    @Override
+    public Response discoverTools(ToolDiscoveryRequestDTO toolDiscoveryRequestDTO) {
+        return Response.ok(mcpService.discoverTools(toolDiscoveryRequestDTO)).build();
+    }
+
+    @ServerExceptionMapper
+    public RestResponse<ProblemDetailResponseDTO> mcpDiscoveryException(McpService.McpDiscoveryException ex) {
+        return exceptionMapper.mcpDiscovery(ex);
     }
 
     @ServerExceptionMapper

@@ -9,7 +9,13 @@ public record McpTool(
         String serverName,
         String serverUrl,
         ToolSpecification toolSpecification,
-        McpClient client) {
+        McpClient client,
+        String dangerLevel,
+        String executionPolicy) {
+
+    public McpTool(String serverName, String serverUrl, ToolSpecification toolSpecification, McpClient client) {
+        this(serverName, serverUrl, toolSpecification, client, null, null);
+    }
 
     public String execute(ToolExecutionRequest request) {
         ToolExecutionResult result = client.executeTool(request);

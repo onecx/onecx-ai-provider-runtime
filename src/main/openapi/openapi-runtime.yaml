@@ -31,6 +31,33 @@ paths:
                 $ref: '#/components/schemas/ProviderHealthStatus'
         "400":
           description: Bad provider health request
+  /internal/runtime/tools/discover:
+    post:
+      security:
+        - oauth2: [ ocx-agent:read ]
+      tags:
+        - runtimeInternal
+      summary: Discover the tools exposed by an MCP server
+      operationId: discoverTools
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToolDiscoveryRequest'
+      responses:
+        "200":
+          description: Discovered MCP tools
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolDiscoveryResponse'
+        "400":
+          description: Bad tool discovery request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailResponse'
   /internal/runtime/chat:
     post:
       security:
@@ -226,6 +253,72 @@ components:
           type: string
         authMode:
           type: string
+        executionPolicy:
+          type: string
+          enum:
+            - ALWAYS_ASK
+            - NEVER_ASK
+        toolRules:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolRuleSnapshot'
+    ToolRuleSnapshot:
+      type: object
+      required:
+        - toolName
+        - allowed
+      properties:
+        toolName:
+          type: string
+        allowed:
+          type: string
+          enum:
+            - ALLOW
+            - DENY
+        dangerLevel:
+          type: string
+          enum:
+            - SAFE
+            - WARNING
+            - DANGEROUS
+    ToolDiscoveryRequest:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+        apiKey:
+          type: string
+        authMode:
+          type: string
+    ToolDiscoveryResponse:
+      type: object
+      properties:
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveredTool'
+    DiscoveredTool:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        annotations:
+          $ref: '#/components/schemas/DiscoveredToolAnnotations'
+    DiscoveredToolAnnotations:
+      type: object
+      properties:
+        readOnlyHint:
+          type: boolean
+        destructiveHint:
+          type: boolean
+        idempotentHint:
+          type: boolean
+        openWorldHint:
+          type: boolean
     AgentGroupSnapshot:
       type: object
       properties:

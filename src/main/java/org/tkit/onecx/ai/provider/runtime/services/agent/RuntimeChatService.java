@@ -339,6 +339,14 @@ public class RuntimeChatService {
             executors.put(tool.toolSpecification(), (request, memoryId) -> {
                 log.info("Executing MCP tool call: tool={}, argumentsPresent={}, arguments={}", request.name(),
                         !isBlank(request.arguments()), request.arguments());
+                if (tool.dangerLevel() != null && !"SAFE".equals(tool.dangerLevel())) {
+                    log.warn("Dangerous tool executed: server={}, tool={}, dangerLevel={}", tool.serverName(),
+                            request.name(), tool.dangerLevel());
+                }
+                if ("ALWAYS_ASK".equals(tool.executionPolicy())) {
+                    log.warn("Tool with ALWAYS_ASK execution policy executed without confirmation (not yet enforced): "
+                            + "server={}, tool={}", tool.serverName(), request.name());
+                }
                 return tool.execute(request);
             });
         }

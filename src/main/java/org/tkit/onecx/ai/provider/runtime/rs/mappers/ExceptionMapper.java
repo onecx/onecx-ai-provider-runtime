@@ -13,6 +13,7 @@ import org.jboss.resteasy.reactive.RestResponse;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.tkit.onecx.ai.provider.runtime.common.RuntimeChatException;
+import org.tkit.onecx.ai.provider.runtime.services.mcp.McpService;
 import org.tkit.quarkus.rs.mappers.OffsetDateTimeMapper;
 
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProblemDetailInvalidParamDTO;
@@ -62,7 +63,13 @@ public interface ExceptionMapper {
     enum ErrorKeys {
 
         OPTIMISTIC_LOCK,
-        CONSTRAINT_VIOLATIONS;
+        CONSTRAINT_VIOLATIONS,
+        MCP_DISCOVERY_FAILED;
+    }
+
+    default RestResponse<ProblemDetailResponseDTO> mcpDiscovery(McpService.McpDiscoveryException ex) {
+        var dto = exception(ErrorKeys.MCP_DISCOVERY_FAILED.name(), ex.getMessage());
+        return RestResponse.status(Response.Status.BAD_GATEWAY, dto);
     }
 
     default RestResponse<ProblemDetailResponseDTO> runtimeChat(RuntimeChatException ex) {
