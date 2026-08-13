@@ -112,6 +112,8 @@ public class RuntimeChatService {
             return future.get(runtimeTimeoutSeconds(), TimeUnit.SECONDS);
         } catch (Exception ex) {
             Throwable cause = rootCause(ex);
+            log.warn("Runtime chat async execution failed: {}: {}", cause.getClass().getSimpleName(), cause.getMessage());
+            log.debug("Runtime chat async execution failure details", cause);
             throw runtimeChatException(cause, "Runtime chat invocation failed");
         }
     }
@@ -759,7 +761,7 @@ public class RuntimeChatService {
         String errorCode = cause instanceof TimeoutException ? "RUNTIME_CHAT_TIMEOUT" : "RUNTIME_CHAT_FAILED";
         Response.Status status = cause instanceof TimeoutException ? Response.Status.GATEWAY_TIMEOUT
                 : Response.Status.INTERNAL_SERVER_ERROR;
-        return new RuntimeChatException(errorCode, type, message, status);
+        return new RuntimeChatException(errorCode, type, message, status, cause);
     }
 
     private interface LocalChatAgent {

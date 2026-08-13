@@ -14,8 +14,22 @@ public class RuntimeChatException extends RuntimeException {
                 status != null ? status.getStatusCode() : Response.Status.BAD_REQUEST.getStatusCode());
     }
 
+    public RuntimeChatException(String errorCode, String errorType, String detail, Response.Status status,
+            Throwable cause) {
+        this(errorCode, errorType, detail,
+                status != null ? status.getStatusCode() : Response.Status.BAD_REQUEST.getStatusCode(), cause);
+    }
+
     public RuntimeChatException(String errorCode, String errorType, String detail, int statusCode) {
         super(detail);
+        this.errorCode = errorCode;
+        this.errorType = errorType;
+        this.detail = detail;
+        this.statusCode = statusCode;
+    }
+
+    public RuntimeChatException(String errorCode, String errorType, String detail, int statusCode, Throwable cause) {
+        super(detail, cause);
         this.errorCode = errorCode;
         this.errorType = errorType;
         this.detail = detail;

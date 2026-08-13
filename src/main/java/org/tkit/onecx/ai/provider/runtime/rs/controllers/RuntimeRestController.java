@@ -16,7 +16,9 @@ import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.RuntimeInternalApi;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProblemDetailResponseDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderHealthRequestDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RuntimeChatRequestDTO;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @ApplicationScoped
 public class RuntimeRestController implements RuntimeInternalApi {
 
@@ -46,6 +48,13 @@ public class RuntimeRestController implements RuntimeInternalApi {
 
     @ServerExceptionMapper
     public RestResponse<ProblemDetailResponseDTO> runtimeChatException(RuntimeChatException ex) {
+        if (ex.getStatusCode() >= Response.Status.INTERNAL_SERVER_ERROR.getStatusCode()) {
+            log.error("Runtime chat failed: errorCode={}, errorType={}, detail={}", ex.getErrorCode(), ex.getErrorType(),
+                    ex.getDetail(), ex);
+        } else {
+            log.warn("Runtime chat rejected: errorCode={}, errorType={}, detail={}", ex.getErrorCode(), ex.getErrorType(),
+                    ex.getDetail());
+        }
         return exceptionMapper.runtimeChat(ex);
     }
 }
