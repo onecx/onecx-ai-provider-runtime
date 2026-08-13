@@ -7,21 +7,16 @@ import static org.mockito.Mockito.when;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
 
+import org.jboss.resteasy.reactive.RestResponse;
 import org.junit.jupiter.api.Test;
+import org.tkit.onecx.ai.provider.runtime.common.RuntimeChatException;
 import org.tkit.onecx.ai.provider.runtime.services.agent.RuntimeChatService;
 import org.tkit.onecx.ai.provider.runtime.services.provider.ProviderHealthService;
 import org.tkit.onecx.ai.provider.runtime.test.AbstractTest;
 import org.tkit.quarkus.security.test.GenerateKeycloakClient;
 
-import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentSnapshotDTO;
-import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ChatMessageDTO;
-import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ChatRequestDTO;
-import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderHealthRequestDTO;
-import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderHealthStatusDTO;
+import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.*;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderHealthStatusDTO.StatusEnum;
-import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderSnapshotDTO;
-import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RuntimeChatRequestDTO;
-import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RuntimeChatResponseDTO;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 
@@ -68,6 +63,22 @@ class RuntimeRestControllerTest extends AbstractTest {
         }
 
         verify(providerHealthService).getProviderHealthStatus(request);
+    }
+
+    @Test
+    void runtimeChatException_mapsRuntimeChatException() {
+        RuntimeChatException ex = new RuntimeChatException("RUNTIME_CHAT_FAILED", "IllegalStateException",
+                "boom", Response.Status.INTERNAL_SERVER_ERROR);
+
+        try (RestResponse<ProblemDetailResponseDTO> response = controller.runtimeChatException(ex)) {
+            assertThat(response.getStatus()).isEqualTo(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode());
+            ProblemDetailResponseDTO entity = response.getEntity();
+            assertThat(entity.getErrorCode()).isEqualTo("RUNTIME_CHAT_FAILED");
+            assertThat(entity.getDetail()).isEqualTo("boom");
+            assertThat(entity.getParams()).hasSize(1);
+            assertThat(entity.getParams().getFirst().getKey()).isEqualTo("errorType");
+            assertThat(entity.getParams().getFirst().getValue()).isEqualTo("IllegalStateException");
+        }
     }
 
     private RuntimeChatRequestDTO chatRequest() {

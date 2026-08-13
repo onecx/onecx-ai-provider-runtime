@@ -48,13 +48,8 @@ public class RuntimeRestController implements RuntimeInternalApi {
 
     @ServerExceptionMapper
     public RestResponse<ProblemDetailResponseDTO> runtimeChatException(RuntimeChatException ex) {
-        if (ex.getStatusCode() >= Response.Status.INTERNAL_SERVER_ERROR.getStatusCode()) {
-            log.error("Runtime chat failed: errorCode={}, errorType={}, detail={}", ex.getErrorCode(), ex.getErrorType(),
-                    ex.getDetail(), ex);
-        } else {
-            log.warn("Runtime chat rejected: errorCode={}, errorType={}, detail={}", ex.getErrorCode(), ex.getErrorType(),
-                    ex.getDetail());
-        }
+        log.error("Runtime chat failed: errorCode={}, errorType={}, detail={}", ex.getErrorCode(), ex.getErrorType(),
+                ex.getDetail(), ex);
         return exceptionMapper.runtimeChat(ex);
     }
 }
