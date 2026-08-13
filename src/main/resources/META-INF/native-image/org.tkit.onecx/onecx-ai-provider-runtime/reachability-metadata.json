@@ -1,0 +1,15 @@
+{
+  "reflection": [
+    {
+      "type": {
+        "proxy": [
+          "dev.langchain4j.agentic.UntypedAgent",
+          "dev.langchain4j.agentic.internal.InternalAgent",
+          "dev.langchain4j.agentic.internal.AgenticScopeOwner",
+          "dev.langchain4j.agentic.scope.AgenticScopeAccess"
+        ]
+      }
+    }
+  ]
+}
+
