@@ -10,8 +10,8 @@ public record McpTool(
         String serverUrl,
         ToolSpecification toolSpecification,
         McpClient client,
-        String dangerLevel,
-        String executionPolicy) {
+        String executionPolicy,
+        String allowed) {
 
     public McpTool(String serverName, String serverUrl, ToolSpecification toolSpecification, McpClient client) {
         this(serverName, serverUrl, toolSpecification, client, null, null);

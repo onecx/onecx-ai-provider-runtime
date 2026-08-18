@@ -71,18 +71,17 @@ public class McpService {
                     closeQuietly(client);
                     return List.of();
                 }
-                logDangerousTools(tool, specs);
                 Map<String, ToolRuleSnapshotDTO> ruleMap = rulesByName(tool);
                 String executionPolicy = tool.getExecutionPolicy() != null ? tool.getExecutionPolicy().value()
                         : null;
                 return specs.stream()
                         .map(spec -> {
                             ToolRuleSnapshotDTO rule = ruleMap.get(spec.name());
-                            String dangerLevel = rule != null && rule.getDangerLevel() != null
-                                    ? rule.getDangerLevel().value()
+                            String allowed = rule != null && rule.getAllowed() != null
+                                    ? rule.getAllowed().value()
                                     : null;
-                            return new McpTool(tool.getName(), tool.getUrl(), spec, client, dangerLevel,
-                                    executionPolicy);
+                            return new McpTool(tool.getName(), tool.getUrl(), spec, client,
+                                    executionPolicy, allowed);
                         })
                         .toList();
             } catch (Exception ex) {
@@ -189,7 +188,8 @@ public class McpService {
                                 tool.getName());
                         return false;
                     }
-                    return rule.getAllowed() == ToolRuleSnapshotDTO.AllowedEnum.ALLOW;
+                    return rule.getAllowed() == ToolRuleSnapshotDTO.AllowedEnum.ALLOW
+                            || rule.getAllowed() == ToolRuleSnapshotDTO.AllowedEnum.ALWAYS_ASK;
                 })
                 .toList();
     }
@@ -201,21 +201,6 @@ public class McpService {
         }
         return rules.stream()
                 .collect(Collectors.toMap(ToolRuleSnapshotDTO::getToolName, r -> r, (a, b) -> a));
-    }
-
-    private void logDangerousTools(ToolSnapshotDTO tool, List<ToolSpecification> specifications) {
-        Map<String, ToolRuleSnapshotDTO> ruleMap = rulesByName(tool);
-        if (ruleMap.isEmpty()) {
-            return;
-        }
-        for (ToolSpecification spec : specifications) {
-            ToolRuleSnapshotDTO rule = ruleMap.get(spec.name());
-            if (rule != null && rule.getDangerLevel() != null
-                    && rule.getDangerLevel() != ToolRuleSnapshotDTO.DangerLevelEnum.SAFE) {
-                log.info("Dangerous tool allowed: server={}, tool={}, dangerLevel={}", tool.getName(), spec.name(),
-                        rule.getDangerLevel());
-            }
-        }
     }
 
     private DiscoveredToolAnnotationsDTO toAnnotations(Map<String, Object> metadata) {
@@ -236,7 +221,10 @@ public class McpService {
 
     private Boolean boolMeta(Map<String, Object> metadata, String key) {
         Object value = metadata.get(key);
-        return value instanceof Boolean b ? b : null;
+        if (value instanceof Boolean b) {
+            return b ? Boolean.TRUE : null;
+        }
+        return null;
     }
 
     private void closeQuietly(McpClient client) {

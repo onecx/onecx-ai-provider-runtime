@@ -275,12 +275,7 @@ components:
           enum:
             - ALLOW
             - DENY
-        dangerLevel:
-          type: string
-          enum:
-            - SAFE
-            - WARNING
-            - DANGEROUS
+            - ALWAYS_ASK
     ToolDiscoveryRequest:
       type: object
       required:
