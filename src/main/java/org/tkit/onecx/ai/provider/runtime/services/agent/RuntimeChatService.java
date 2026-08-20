@@ -50,6 +50,7 @@ import dev.langchain4j.agentic.supervisor.SupervisorAgent;
 import dev.langchain4j.agentic.supervisor.SupervisorContextStrategy;
 import dev.langchain4j.agentic.supervisor.SupervisorResponseStrategy;
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
@@ -255,7 +256,7 @@ public class RuntimeChatService {
             List<RuntimeAgentDelegate> delegateAgents) {
         ChatModel chatModel = chatModelFactory.createChatModel(agent);
         McpToolRegistry toolRegistry = mcpService.createToolRegistry(agent);
-        Map<ToolSpecification, ToolExecutor> toolExecutors = toToolExecutors(toolRegistry);
+        Map<ToolSpecification, ToolExecutor> toolExecutors = toToolExecutors(toolRegistry, request);
         List<RuntimeAgentDelegate> delegates = delegateAgents != null ? delegateAgents : List.of();
         toolExecutors.putAll(toDelegateToolExecutors(delegates));
         Set<String> toolNames = toolExecutors.keySet().stream()
@@ -265,12 +266,17 @@ public class RuntimeChatService {
                 ? chatModel
                 : new TextToolCallNormalizingChatModel(chatModel, toolNames);
         Skills runtimeSkills = runtimeSkillService.runtimeSkills(agent);
+        boolean hasAlwaysAskTools = toolRegistry.tools().stream()
+                .anyMatch(tool -> "ALWAYS_ASK".equals(tool.allowed()) || "ALWAYS_ASK".equals(tool.executionPolicy()));
 
         var builder = AiServices.builder(LocalChatAgent.class)
                 .chatModel(effectiveChatModel)
-                .systemMessage(systemMessage(agent, request, delegates, runtimeSkills))
+                .systemMessage(systemMessage(agent, request, delegates, runtimeSkills, hasAlwaysAskTools))
                 .userMessageProvider(input -> userMessage(request, inputMessage(input, extractUserMessage(request))))
-                .maxSequentialToolsInvocations(maxSequentialToolInvocations());
+                .maxSequentialToolsInvocations(maxSequentialToolInvocations())
+                .chatMemoryProvider(memoryId -> MessageWindowChatMemory.builder()
+                        .maxMessages(maxSequentialToolInvocations() * 4 + 10)
+                        .build());
         if (!toolExecutors.isEmpty()) {
             builder.tools(toolExecutors);
         }
@@ -333,24 +339,45 @@ public class RuntimeChatService {
                 new AgenticWorkflowInvocationAdapter(runtimeName(externalAgent), a2aAgent), null);
     }
 
-    private Map<ToolSpecification, ToolExecutor> toToolExecutors(McpToolRegistry toolRegistry) {
+    private Map<ToolSpecification, ToolExecutor> toToolExecutors(McpToolRegistry toolRegistry,
+            ChatRequestDTO request) {
         Map<ToolSpecification, ToolExecutor> executors = new LinkedHashMap<>();
         for (McpTool tool : toolRegistry.tools()) {
-            executors.put(tool.toolSpecification(), (request, memoryId) -> {
-                log.info("Executing MCP tool call: tool={}, argumentsPresent={}, arguments={}", request.name(),
-                        !isBlank(request.arguments()), request.arguments());
-                if ("ALWAYS_ASK".equals(tool.executionPolicy())) {
-                    log.warn("Tool with ALWAYS_ASK execution policy executed without confirmation (not yet enforced): "
-                            + "server={}, tool={}", tool.serverName(), request.name());
+            boolean alwaysAsk = "ALWAYS_ASK".equals(tool.allowed()) || "ALWAYS_ASK".equals(tool.executionPolicy());
+            ToolSpecification spec = alwaysAsk ? withConfirmationDescription(tool.toolSpecification())
+                    : tool.toolSpecification();
+            executors.put(spec, (toolRequest, memoryId) -> {
+                log.info("Executing MCP tool call: tool={}, argumentsPresent={}, arguments={}", toolRequest.name(),
+                        !isBlank(toolRequest.arguments()), toolRequest.arguments());
+                if (alwaysAsk) {
+                    if (isUserConfirmationPresent(request, toolRequest.name())) {
+                        log.info("ALWAYS_ASK tool '{}' confirmed by user — proceeding with execution",
+                                toolRequest.name());
+                    } else {
+                        log.info("ALWAYS_ASK tool '{}' executed without user confirmation — returning confirmation request",
+                                toolRequest.name());
+                        return ("CONFIRMATION REQUIRED: I need your explicit confirmation before executing tool '%s'"
+                                + " with arguments: %s. Please reply with \"yes\" or \"confirm\" to proceed.")
+                                .formatted(toolRequest.name(),
+                                        !isBlank(toolRequest.arguments()) ? toolRequest.arguments() : "{}");
+                    }
                 }
-                if ("ALWAYS_ASK".equals(tool.allowed())) {
-                    log.warn("Tool with ALWAYS_ASK permission executed without confirmation (not yet enforced): "
-                            + "server={}, tool={}", tool.serverName(), request.name());
-                }
-                return tool.execute(request);
+                return tool.execute(toolRequest);
             });
         }
         return executors;
+    }
+
+    private ToolSpecification withConfirmationDescription(ToolSpecification original) {
+        String confirmationPrefix = "⚠️ REQUIRES USER CONFIRMATION: You MUST ask the user for explicit confirmation"
+                + " before calling this tool. Present the tool name and arguments, and only proceed after the user"
+                + " explicitly confirms (e.g., replies \"yes\" or \"confirm\").";
+        String originalDescription = original.description() != null ? original.description() : "";
+        return ToolSpecification.builder()
+                .name(original.name())
+                .description(confirmationPrefix + System.lineSeparator() + originalDescription)
+                .parameters(original.parameters())
+                .build();
     }
 
     private Map<ToolSpecification, ToolExecutor> toDelegateToolExecutors(List<RuntimeAgentDelegate> delegateAgents) {
@@ -416,12 +443,21 @@ public class RuntimeChatService {
     }
 
     private String systemMessage(AgentSnapshotDTO agent, ChatRequestDTO request,
-            List<RuntimeAgentDelegate> delegateAgents, Skills runtimeSkills) {
+            List<RuntimeAgentDelegate> delegateAgents, Skills runtimeSkills, boolean hasAlwaysAskTools) {
         String composed = scaffoldPromptComposer.compose(agent, request);
         String base = !isBlank(composed) ? composed : "You are a helpful assistant.";
         if (runtimeSkills != null) {
             base = base + System.lineSeparator() + System.lineSeparator()
                     + runtimeSkillService.activationPrompt(runtimeSkills);
+        }
+        if (hasAlwaysAskTools) {
+            base = base + System.lineSeparator() + System.lineSeparator()
+                    + "Some tools require explicit user confirmation before execution"
+                    + " (marked as \"REQUIRES USER CONFIRMATION\" in their description)."
+                    + " When you want to use such a tool, you MUST first ask the user if they want to proceed."
+                    + " Only call the tool after the user explicitly confirms."
+                    + " If a tool returns \"CONFIRMATION REQUIRED\", present the confirmation request to the user"
+                    + " and wait for their response.";
         }
         if (delegateAgents == null || delegateAgents.isEmpty()) {
             return base;
@@ -698,6 +734,21 @@ public class RuntimeChatService {
             return "";
         }
         return request.getChatMessage().getMessage();
+    }
+
+    private boolean isUserConfirmationPresent(ChatRequestDTO request, String toolName) {
+        if (request == null || request.getConversation() == null || request.getConversation().getHistory() == null) {
+            return false;
+        }
+        List<ChatMessageDTO> history = request.getConversation().getHistory();
+        for (int i = history.size() - 1; i >= 0; i--) {
+            ChatMessageDTO msg = history.get(i);
+            if ("USER".equals(msg.getType())) {
+                String text = safeString(msg.getMessage()).toLowerCase();
+                return text.matches(".*\\b(yes|ok|confirm|proceed|sure|go ahead|do it|yep|yeah|approve|allow)\\b.*");
+            }
+        }
+        return false;
     }
 
     private String delegateToolBaseName(String name) {
