@@ -97,8 +97,9 @@ class RuntimeChatServiceReflectionTest {
                 () -> new RuntimeAgent("peer", "desc", new StaticUntypedAgent("peer answer"), null));
 
         String systemMessage = (String) invoke("systemMessage",
-                new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, List.class, dev.langchain4j.skills.Skills.class },
-                agent, chatRequest("hello"), List.of(delegate), null);
+                new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, List.class, dev.langchain4j.skills.Skills.class,
+                        boolean.class },
+                agent, chatRequest("hello"), List.of(delegate), null, false);
         assertThat(systemMessage)
                 .contains("Agent prompt")
                 .contains("Peer Agent")
@@ -131,7 +132,8 @@ class RuntimeChatServiceReflectionTest {
 
         @SuppressWarnings("unchecked")
         Map<ToolSpecification, ToolExecutor> mcpExecutors = (Map<ToolSpecification, ToolExecutor>) invoke(
-                "toToolExecutors", new Class[] { McpToolRegistry.class }, new McpToolRegistry(List.of(tool)));
+                "toToolExecutors", new Class[] { McpToolRegistry.class, ChatRequestDTO.class },
+                new McpToolRegistry(List.of(tool)), chatRequest("hello"));
         assertThat(mcpExecutors).containsKey(spec);
         assertThat(mcpExecutors.get(spec).execute(toolRequest("search_docs", "{\"query\":\"onecx\"}"), null))
                 .isEqualTo("docs result");
