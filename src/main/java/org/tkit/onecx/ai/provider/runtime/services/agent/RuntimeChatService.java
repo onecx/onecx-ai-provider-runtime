@@ -74,6 +74,10 @@ public class RuntimeChatService {
 
     static final String INPUT_REQUEST = "request";
 
+    private static final Set<String> CONFIRMATION_WORDS = Set.of(
+            "yes", "ok", "okay", "confirm", "confirmed", "proceed", "sure", "yep", "yeah",
+            "approve", "approved", "allow", "allowed", "go", "do");
+
     @Inject
     ChatModelFactory chatModelFactory;
 
@@ -369,7 +373,7 @@ public class RuntimeChatService {
     }
 
     private ToolSpecification withConfirmationDescription(ToolSpecification original) {
-        String confirmationPrefix = "⚠️ REQUIRES USER CONFIRMATION: You MUST ask the user for explicit confirmation"
+        String confirmationPrefix = "[REQUIRES USER CONFIRMATION] You MUST ask the user for explicit confirmation"
                 + " before calling this tool. Present the tool name and arguments, and only proceed after the user"
                 + " explicitly confirms (e.g., replies \"yes\" or \"confirm\").";
         String originalDescription = original.description() != null ? original.description() : "";
@@ -744,8 +748,14 @@ public class RuntimeChatService {
         for (int i = history.size() - 1; i >= 0; i--) {
             ChatMessageDTO msg = history.get(i);
             if ("USER".equals(msg.getType())) {
-                String text = safeString(msg.getMessage()).toLowerCase();
-                return text.matches(".*\\b(yes|ok|confirm|proceed|sure|go ahead|do it|yep|yeah|approve|allow)\\b.*");
+                String text = safeString(msg.getMessage()).toLowerCase().trim();
+                String[] tokens = text.split("[\\s,;.!?]+");
+                for (String token : tokens) {
+                    if (CONFIRMATION_WORDS.contains(token)) {
+                        return true;
+                    }
+                }
+                return false;
             }
         }
         return false;
