@@ -222,8 +222,9 @@ class RuntimeChatServiceReflectionTest {
                 "Before [{\"tool_name\":\"search_docs\",\"arguments\":{\"query\":\"onecx\"}}] after",
                 Set.of("search_docs"));
         assertThat(requests).hasSize(1);
-        assertThat(requests.getFirst().name()).isEqualTo("search_docs");
-        assertThat(requests.getFirst().arguments()).contains("onecx");
+        assertThat(requests.getFirst())
+                .satisfies(req -> assertThat(req.name()).isEqualTo("search_docs"),
+                        req -> assertThat(req.arguments()).contains("onecx"));
 
         assertThat(invoke("extractTextToolCalls", new Class[] { String.class, Set.class }, "no json",
                 Set.of("search_docs"))).isEqualTo(List.of());
@@ -526,7 +527,7 @@ class RuntimeChatServiceReflectionTest {
             Object result = invoke(adapter, "invokeWithAgenticScope",
                     new Class[] { Map.class }, Map.of("message", "hello"));
             assertThat(result).isNotNull();
-            assertThat(((ResultWithAgenticScope<?>) result).result()).isEqualTo("");
+            assertThat((String) ((ResultWithAgenticScope<?>) result).result()).isEmpty();
         }
     }
 
@@ -1619,8 +1620,9 @@ class RuntimeChatServiceReflectionTest {
                 new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class, List.class },
                 rootAgent, group, chatRequest("hello"),
                 List.of(new RuntimeAgent("NoDesc", null, new StaticUntypedAgent("x"), null)));
-        assertThat(result).contains("- NoDesc");
-        assertThat(result).doesNotContain("NoDesc:");
+        assertThat(result)
+                .contains("- NoDesc")
+                .doesNotContain("NoDesc:");
     }
 
     // ---- invokeRootResponse falls back to single agent when group response is blank ----
@@ -2172,8 +2174,9 @@ class RuntimeChatServiceReflectionTest {
         List<RuntimeAgentDelegate> delegates = (List<RuntimeAgentDelegate>) invoke("delegatesForGroup",
                 new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
                 group, chatRequest("hi"));
-        assertThat(delegates).hasSize(2);
-        assertThat(delegates).extracting(RuntimeAgentDelegate::name)
+        assertThat(delegates)
+                .hasSize(2)
+                .extracting(RuntimeAgentDelegate::name)
                 .contains("ext-agent", "internal-agent");
     }
 
@@ -2679,7 +2682,7 @@ class RuntimeChatServiceReflectionTest {
             ErrorRecoveryResult recovery = errorHandlerCaptor.getValue()
                     .apply(errorContext);
             assertThat(recovery).isNotNull();
-            assertThat(recovery.result()).isEqualTo("");
+            assertThat((String) recovery.result()).isEmpty();
         }
     }
 
