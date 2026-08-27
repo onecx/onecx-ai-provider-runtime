@@ -10,8 +10,8 @@ public interface DispatchConfig {
     /**
      * MCP related configuration.
      */
-    @WithName("mcp")
-    MCPConfig mcpConfig();
+    @WithName("tool")
+    ToolConfig toolConfig();
 
     /**
      * LLM provider related configuration.
@@ -25,7 +25,7 @@ public interface DispatchConfig {
     @WithName("a2a")
     A2AConfig a2aConfig();
 
-    interface MCPConfig {
+    interface ToolConfig {
 
         /**
          * Maximum number of sequential tool-call iterations.
@@ -61,6 +61,20 @@ public interface DispatchConfig {
         @WithName("max-tool-execution-retries")
         @WithDefault("3")
         long maxToolExecutionRetries();
+
+        /**
+         * Whether tool allow-list enforcement is enabled.
+         */
+        @WithName("enforcement-enabled")
+        @WithDefault("true")
+        boolean enforcementEnabled();
+
+        /**
+         * When a tool has no rules configured, allow all MCP tools (legacy behaviour).
+         */
+        @WithName("legacy-allow-all")
+        @WithDefault("true")
+        boolean legacyAllowAll();
     }
 
     interface ProviderConfig {

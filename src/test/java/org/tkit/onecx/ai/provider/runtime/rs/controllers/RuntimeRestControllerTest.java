@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
+
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
 
@@ -11,6 +13,7 @@ import org.jboss.resteasy.reactive.RestResponse;
 import org.junit.jupiter.api.Test;
 import org.tkit.onecx.ai.provider.runtime.common.RuntimeChatException;
 import org.tkit.onecx.ai.provider.runtime.services.agent.RuntimeChatService;
+import org.tkit.onecx.ai.provider.runtime.services.mcp.McpService;
 import org.tkit.onecx.ai.provider.runtime.services.provider.ProviderHealthService;
 import org.tkit.onecx.ai.provider.runtime.test.AbstractTest;
 import org.tkit.quarkus.security.test.GenerateKeycloakClient;
@@ -32,6 +35,9 @@ class RuntimeRestControllerTest extends AbstractTest {
 
     @InjectMock
     ProviderHealthService providerHealthService;
+
+    @InjectMock
+    McpService mcpService;
 
     @Test
     void chat_delegatesToRuntimeChatService() {
@@ -78,6 +84,36 @@ class RuntimeRestControllerTest extends AbstractTest {
             assertThat(entity.getParams()).hasSize(1);
             assertThat(entity.getParams().getFirst().getKey()).isEqualTo("errorType");
             assertThat(entity.getParams().getFirst().getValue()).isEqualTo("IllegalStateException");
+        }
+    }
+
+    @Test
+    void discoverTools_delegatesToMcpService() {
+        ToolDiscoveryRequestDTO request = new ToolDiscoveryRequestDTO();
+        request.setUrl("http://mcp");
+        ToolDiscoveryResponseDTO serviceResponse = new ToolDiscoveryResponseDTO();
+        serviceResponse.setTools(List.of());
+
+        when(mcpService.discoverTools(request)).thenReturn(serviceResponse);
+
+        try (Response response = controller.discoverTools(request)) {
+            assertThat(response.getStatus()).isEqualTo(Response.Status.OK.getStatusCode());
+            assertThat(response.getEntity()).isSameAs(serviceResponse);
+        }
+
+        verify(mcpService).discoverTools(request);
+    }
+
+    @Test
+    void mcpDiscoveryException_mapsToBadGateway() {
+        McpService.McpDiscoveryException ex = new McpService.McpDiscoveryException("discovery failed",
+                new RuntimeException("cause"));
+
+        try (RestResponse<ProblemDetailResponseDTO> response = controller.mcpDiscoveryException(ex)) {
+            assertThat(response.getStatus()).isEqualTo(Response.Status.BAD_GATEWAY.getStatusCode());
+            ProblemDetailResponseDTO entity = response.getEntity();
+            assertThat(entity.getErrorCode()).isEqualTo("MCP_DISCOVERY_FAILED");
+            assertThat(entity.getDetail()).isEqualTo("discovery failed");
         }
     }
 

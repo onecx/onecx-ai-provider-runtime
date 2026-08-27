@@ -15,16 +15,22 @@ import org.tkit.onecx.ai.provider.runtime.common.RuntimeChatException;
 import org.tkit.onecx.ai.provider.runtime.config.DispatchConfig;
 import org.tkit.onecx.ai.provider.runtime.services.external.ExternalAgentDiscoveryService;
 import org.tkit.onecx.ai.provider.runtime.services.mcp.McpService;
+import org.tkit.onecx.ai.provider.runtime.services.mcp.McpTool;
 import org.tkit.onecx.ai.provider.runtime.services.mcp.McpToolRegistry;
 import org.tkit.onecx.ai.provider.runtime.services.provider.ChatModelFactory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.service.tool.ToolExecutionResult;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentGroupSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ChatMessageDTO;
@@ -197,11 +203,91 @@ class RuntimeChatServiceTest {
         }
     }
 
+    @Test
+    void chat_withAlwaysAskTool_buildsConfirmationDescriptionInToolSpec() {
+        McpClient client = mock(McpClient.class);
+        ToolSpecification spec = ToolSpecification.builder()
+                .name("dangerous_tool")
+                .description("Delete everything")
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("target")
+                        .required("target")
+                        .build())
+                .build();
+        McpTool alwaysAskTool = new McpTool("server", "http://mcp", spec, client,
+                null, "ALWAYS_ASK");
+        when(mcpService.createToolRegistry(any())).thenReturn(new McpToolRegistry(List.of(alwaysAskTool)));
+        when(chatModelFactory.createChatModel(any())).thenReturn(new StaticChatModel("pong"));
+
+        var response = service.chat(runtimeRequest(rootAgent(), "hello"));
+
+        assertThat(response).isNotNull();
+    }
+
+    @Test
+    void chat_withAlwaysAskTool_returnsConfirmationRequiredWhenNoUserConfirmation() {
+        McpClient client = mock(McpClient.class);
+        ToolSpecification spec = ToolSpecification.builder()
+                .name("dangerous_tool")
+                .description("Delete everything")
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("target")
+                        .required("target")
+                        .build())
+                .build();
+        McpTool alwaysAskTool = new McpTool("server", "http://mcp", spec, client,
+                "ALWAYS_ASK", null);
+        when(mcpService.createToolRegistry(any())).thenReturn(new McpToolRegistry(List.of(alwaysAskTool)));
+
+        ConfirmationDetectingChatModel model = new ConfirmationDetectingChatModel("NO",
+                AiMessage.from(ToolExecutionRequest.builder()
+                        .name("dangerous_tool")
+                        .arguments("{\"target\":\"all\"}")
+                        .build()));
+        when(chatModelFactory.createChatModel(any())).thenReturn(model);
+
+        var response = service.chat(runtimeRequest(rootAgent(), "delete everything"));
+
+        assertThat(response).isNotNull();
+        assertThat(response.getMessage()).contains("CONFIRMATION REQUIRED");
+    }
+
+    @Test
+    void chat_withAlwaysAskTool_executesWhenUserConfirms() {
+        McpClient client = mock(McpClient.class);
+        ToolSpecification spec = ToolSpecification.builder()
+                .name("dangerous_tool")
+                .description("Delete everything")
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("target")
+                        .required("target")
+                        .build())
+                .build();
+        McpTool alwaysAskTool = new McpTool("server", "http://mcp", spec, client,
+                "ALWAYS_ASK", null);
+        when(mcpService.createToolRegistry(any())).thenReturn(new McpToolRegistry(List.of(alwaysAskTool)));
+
+        ToolExecutionResult toolResult = mock(ToolExecutionResult.class);
+        when(toolResult.resultText()).thenReturn("deleted successfully");
+        when(client.executeTool(any())).thenReturn(toolResult);
+
+        ConfirmationDetectingChatModel model = new ConfirmationDetectingChatModel("YES",
+                AiMessage.from(ToolExecutionRequest.builder()
+                        .name("dangerous_tool")
+                        .arguments("{\"target\":\"all\"}")
+                        .build()));
+        when(chatModelFactory.createChatModel(any())).thenReturn(model);
+
+        var response = service.chat(runtimeRequest(rootAgent(), "yes, delete everything"));
+
+        assertThat(response).isNotNull();
+    }
+
     private DispatchConfig dispatchConfig() {
         DispatchConfig dispatchConfig = mock(DispatchConfig.class);
-        DispatchConfig.MCPConfig mcpConfig = mock(DispatchConfig.MCPConfig.class);
-        when(mcpConfig.maxIterations()).thenReturn(3L);
-        when(dispatchConfig.mcpConfig()).thenReturn(mcpConfig);
+        DispatchConfig.ToolConfig toolConfig = mock(DispatchConfig.ToolConfig.class);
+        when(toolConfig.maxIterations()).thenReturn(3L);
+        when(dispatchConfig.toolConfig()).thenReturn(toolConfig);
         return dispatchConfig;
     }
 
@@ -250,6 +336,36 @@ class RuntimeChatServiceTest {
             }
             return ChatResponse.builder()
                     .aiMessage(AiMessage.from("late answer"))
+                    .build();
+        }
+    }
+
+    private static final class ConfirmationDetectingChatModel implements ChatModel {
+
+        private final String confirmationResponse;
+        private final AiMessage toolCallResponse;
+        private int callCount = 0;
+
+        private ConfirmationDetectingChatModel(String confirmationResponse, AiMessage toolCallResponse) {
+            this.confirmationResponse = confirmationResponse;
+            this.toolCallResponse = toolCallResponse;
+        }
+
+        @Override
+        public ChatResponse doChat(ChatRequest chatRequest) {
+            callCount++;
+            if (callCount == 1) {
+                return ChatResponse.builder()
+                        .aiMessage(toolCallResponse)
+                        .build();
+            }
+            if (callCount == 2) {
+                return ChatResponse.builder()
+                        .aiMessage(AiMessage.from(confirmationResponse))
+                        .build();
+            }
+            return ChatResponse.builder()
+                    .aiMessage(AiMessage.from("CONFIRMATION REQUIRED: Please confirm."))
                     .build();
         }
     }

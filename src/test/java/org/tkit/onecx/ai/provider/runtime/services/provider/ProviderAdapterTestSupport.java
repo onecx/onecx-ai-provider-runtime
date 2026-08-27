@@ -18,7 +18,7 @@ class ProviderAdapterTestSupport {
     static DispatchConfig dispatchConfig(long maxRetries) {
         return new DispatchConfig() {
             @Override
-            public MCPConfig mcpConfig() {
+            public ToolConfig toolConfig() {
                 return null;
             }
 

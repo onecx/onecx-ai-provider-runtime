@@ -1,5 +1,6 @@
 package org.tkit.onecx.ai.provider.runtime.services.agent;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -50,6 +51,7 @@ import dev.langchain4j.agentic.supervisor.SupervisorAgent;
 import dev.langchain4j.agentic.supervisor.SupervisorContextStrategy;
 import dev.langchain4j.agentic.supervisor.SupervisorResponseStrategy;
 import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
@@ -74,9 +76,40 @@ public class RuntimeChatService {
 
     static final String INPUT_REQUEST = "request";
 
-    private static final Set<String> CONFIRMATION_WORDS = Set.of(
-            "yes", "ok", "okay", "confirm", "confirmed", "proceed", "sure", "yep", "yeah",
-            "approve", "approved", "allow", "allowed", "go", "do");
+    static final String ALWAYS_ASK = "ALWAYS_ASK";
+
+    private static final String LANGUAGE_DIRECTIVE = "Always respond in the same language as the user's message.";
+
+    private static final String CONFIRMATION_PROMPT_TEMPLATE = """
+            Does the following user message indicate explicit confirmation \
+            to proceed with an action? Consider all languages. \
+            Reply only YES or NO.
+
+            User message: %s""";
+
+    private static final String ALWAYS_ASK_SYSTEM_PROMPT = """
+            Some tools require explicit user confirmation before execution \
+            (marked as "REQUIRES USER CONFIRMATION" in their description). \
+            When you want to use such a tool, you MUST first ask the user if they want to proceed. \
+            Only call the tool after the user explicitly confirms. \
+            If a tool returns "CONFIRMATION REQUIRED", present the confirmation request to the user \
+            and wait for their response.""";
+
+    private static final String CONFIRMATION_DESCRIPTION_PREFIX = """
+            [REQUIRES USER CONFIRMATION] You MUST ask the user for explicit confirmation \
+            before calling this tool. Present the tool name and arguments, and only proceed after the user \
+            explicitly confirms (e.g., replies "yes" or "confirm").""";
+
+    private static final String CONFIRMATION_REQUIRED_MESSAGE = """
+            CONFIRMATION REQUIRED: I need your explicit confirmation before executing tool '%s' \
+            with arguments: %s. Please reply with "yes" or "confirm" to proceed.""";
+
+    private static final String DELEGATION_POLICY_HEADER = """
+            Optional peer agents are available as tools.
+            You are the lead agent and own the final answer.
+            Use a peer agent only when the user's request clearly matches the peer's name, description, domain, data source, or specialty.
+            If you call a peer, use its result as private working context and return one final assistant message.
+            Available peer agents:""";
 
     @Inject
     ChatModelFactory chatModelFactory;
@@ -127,7 +160,7 @@ public class RuntimeChatService {
         try {
             String message = invokeRootResponse(request.getRootAgent(), request.getChatRequest());
             RuntimeChatResponseDTO response = new RuntimeChatResponseDTO();
-            response.setMessage(message != null ? message : "");
+            response.setMessage(message);
             return response;
         } catch (Exception ex) {
             Throwable cause = rootCause(ex);
@@ -139,11 +172,12 @@ public class RuntimeChatService {
     }
 
     private String invokeRootResponse(AgentSnapshotDTO agent, ChatRequestDTO request) {
+        String groupResponse = null;
         if (Boolean.TRUE.equals(agent.getA2aEnabled()) && agent.getGroups() != null && !agent.getGroups().isEmpty()) {
-            String groupResponse = executeGroups(agent, request);
-            if (!isBlank(groupResponse)) {
-                return groupResponse;
-            }
+            groupResponse = executeGroups(agent, request);
+        }
+        if (!isBlank(groupResponse)) {
+            return groupResponse;
         }
         try (RuntimeAgent rootAgent = rootAgent(agent, request)) {
             return invokeSingleAgent(rootAgent, request);
@@ -204,9 +238,6 @@ public class RuntimeChatService {
                 candidates.add(lazySupervisorCandidate(delegate.name(), delegate.description(), delegate::open, group,
                         extractUserMessage(request)));
             }
-            if (candidates.isEmpty()) {
-                return "";
-            }
             SupervisorAgent supervisor = AgenticServices.supervisorBuilder()
                     .name("a2a-supervisor-" + safeString(group.getName()))
                     .description("Routes the user request to the most relevant configured agents")
@@ -260,7 +291,7 @@ public class RuntimeChatService {
             List<RuntimeAgentDelegate> delegateAgents) {
         ChatModel chatModel = chatModelFactory.createChatModel(agent);
         McpToolRegistry toolRegistry = mcpService.createToolRegistry(agent);
-        Map<ToolSpecification, ToolExecutor> toolExecutors = toToolExecutors(toolRegistry, request);
+        Map<ToolSpecification, ToolExecutor> toolExecutors = toToolExecutors(toolRegistry, request, chatModel);
         List<RuntimeAgentDelegate> delegates = delegateAgents != null ? delegateAgents : List.of();
         toolExecutors.putAll(toDelegateToolExecutors(delegates));
         Set<String> toolNames = toolExecutors.keySet().stream()
@@ -270,17 +301,15 @@ public class RuntimeChatService {
                 ? chatModel
                 : new TextToolCallNormalizingChatModel(chatModel, toolNames);
         Skills runtimeSkills = runtimeSkillService.runtimeSkills(agent);
-        boolean hasAlwaysAskTools = toolRegistry.tools().stream()
-                .anyMatch(tool -> "ALWAYS_ASK".equals(tool.allowed()) || "ALWAYS_ASK".equals(tool.executionPolicy()));
+        boolean hasAlwaysAskTools = hasAlwaysAskTools(toolRegistry);
+        String systemMessage = systemMessage(agent, request, delegates, runtimeSkills, hasAlwaysAskTools);
 
         var builder = AiServices.builder(LocalChatAgent.class)
                 .chatModel(effectiveChatModel)
-                .systemMessage(systemMessage(agent, request, delegates, runtimeSkills, hasAlwaysAskTools))
+                .systemMessage(systemMessage)
                 .userMessageProvider(input -> userMessage(request, inputMessage(input, extractUserMessage(request))))
                 .maxSequentialToolsInvocations(maxSequentialToolInvocations())
-                .chatMemoryProvider(memoryId -> MessageWindowChatMemory.builder()
-                        .maxMessages(maxSequentialToolInvocations() * 4 + 10)
-                        .build());
+                .chatMemoryProvider(chatMemoryProvider());
         if (!toolExecutors.isEmpty()) {
             builder.tools(toolExecutors);
         }
@@ -296,11 +325,29 @@ public class RuntimeChatService {
                 new AgenticWorkflowInvocationAdapter(runtimeName(agent), executor), toolRegistry);
     }
 
+    private boolean hasAlwaysAskTools(McpToolRegistry toolRegistry) {
+        return toolRegistry.tools().stream()
+                .anyMatch(tool -> ALWAYS_ASK.equals(tool.allowed()) || ALWAYS_ASK.equals(tool.executionPolicy()));
+    }
+
+    private ChatMemoryProvider chatMemoryProvider() {
+        return memoryId -> MessageWindowChatMemory.builder()
+                .maxMessages(maxSequentialToolInvocations() * 4 + 10)
+                .build();
+    }
+
     private List<RuntimeAgentDelegate> delegatesForGroup(AgentGroupSnapshotDTO group, ChatRequestDTO request) {
         if (group == null) {
             return List.of();
         }
         List<RuntimeAgentDelegate> agents = new ArrayList<>();
+        collectDelegates(group, request, agents);
+        agents.sort(Comparator.comparing(agent -> safeString(agent.name()).toLowerCase()));
+        return agents;
+    }
+
+    private void collectDelegates(AgentGroupSnapshotDTO group, ChatRequestDTO request,
+            List<RuntimeAgentDelegate> agents) {
         if (group.getAgents() != null) {
             for (AgentSnapshotDTO agent : group.getAgents()) {
                 if (agent != null) {
@@ -317,8 +364,6 @@ public class RuntimeChatService {
                 }
             }
         }
-        agents.sort(Comparator.comparing(agent -> safeString(agent.name()).toLowerCase()));
-        return agents;
     }
 
     private RuntimeAgent buildRemoteAgent(ExternalAgentSnapshotDTO externalAgent) {
@@ -344,26 +389,19 @@ public class RuntimeChatService {
     }
 
     private Map<ToolSpecification, ToolExecutor> toToolExecutors(McpToolRegistry toolRegistry,
-            ChatRequestDTO request) {
+            ChatRequestDTO request, ChatModel chatModel) {
         Map<ToolSpecification, ToolExecutor> executors = new LinkedHashMap<>();
         for (McpTool tool : toolRegistry.tools()) {
-            boolean alwaysAsk = "ALWAYS_ASK".equals(tool.allowed()) || "ALWAYS_ASK".equals(tool.executionPolicy());
+            boolean alwaysAsk = ALWAYS_ASK.equals(tool.allowed()) || ALWAYS_ASK.equals(tool.executionPolicy());
             ToolSpecification spec = alwaysAsk ? withConfirmationDescription(tool.toolSpecification())
                     : tool.toolSpecification();
             executors.put(spec, (toolRequest, memoryId) -> {
                 log.info("Executing MCP tool call: tool={}, argumentsPresent={}, arguments={}", toolRequest.name(),
                         !isBlank(toolRequest.arguments()), toolRequest.arguments());
                 if (alwaysAsk) {
-                    if (isUserConfirmationPresent(request, toolRequest.name())) {
-                        log.info("ALWAYS_ASK tool '{}' confirmed by user — proceeding with execution",
-                                toolRequest.name());
-                    } else {
-                        log.info("ALWAYS_ASK tool '{}' executed without user confirmation — returning confirmation request",
-                                toolRequest.name());
-                        return ("CONFIRMATION REQUIRED: I need your explicit confirmation before executing tool '%s'"
-                                + " with arguments: %s. Please reply with \"yes\" or \"confirm\" to proceed.")
-                                .formatted(toolRequest.name(),
-                                        !isBlank(toolRequest.arguments()) ? toolRequest.arguments() : "{}");
+                    String confirmationResponse = handleAlwaysAskExecution(toolRequest, request, chatModel);
+                    if (confirmationResponse != null) {
+                        return confirmationResponse;
                     }
                 }
                 return tool.execute(toolRequest);
@@ -372,14 +410,25 @@ public class RuntimeChatService {
         return executors;
     }
 
+    private String handleAlwaysAskExecution(ToolExecutionRequest toolRequest, ChatRequestDTO request,
+            ChatModel chatModel) {
+        if (isUserConfirmationPresent(request, chatModel)) {
+            log.info("{} tool '{}' confirmed by user — proceeding with execution",
+                    ALWAYS_ASK, toolRequest.name());
+            return null;
+        }
+        log.info("{} tool '{}' executed without user confirmation — returning confirmation request",
+                ALWAYS_ASK, toolRequest.name());
+        String arguments = !isBlank(toolRequest.arguments()) ? toolRequest.arguments() : "{}";
+        return CONFIRMATION_REQUIRED_MESSAGE.formatted(toolRequest.name(), arguments);
+    }
+
     private ToolSpecification withConfirmationDescription(ToolSpecification original) {
-        String confirmationPrefix = "[REQUIRES USER CONFIRMATION] You MUST ask the user for explicit confirmation"
-                + " before calling this tool. Present the tool name and arguments, and only proceed after the user"
-                + " explicitly confirms (e.g., replies \"yes\" or \"confirm\").";
-        String originalDescription = original.description() != null ? original.description() : "";
+        String originalDescription = safeString(original.description());
+        String description = CONFIRMATION_DESCRIPTION_PREFIX + System.lineSeparator() + originalDescription;
         return ToolSpecification.builder()
                 .name(original.name())
-                .description(confirmationPrefix + System.lineSeparator() + originalDescription)
+                .description(description)
                 .parameters(original.parameters())
                 .build();
     }
@@ -388,6 +437,10 @@ public class RuntimeChatService {
         if (delegateAgents == null || delegateAgents.isEmpty()) {
             return Map.of();
         }
+        return buildDelegateExecutors(delegateAgents);
+    }
+
+    private Map<ToolSpecification, ToolExecutor> buildDelegateExecutors(List<RuntimeAgentDelegate> delegateAgents) {
         Map<String, Long> duplicateCounts = delegateAgents.stream()
                 .map(agent -> delegateToolBaseName(agent.name()))
                 .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
@@ -450,18 +503,13 @@ public class RuntimeChatService {
             List<RuntimeAgentDelegate> delegateAgents, Skills runtimeSkills, boolean hasAlwaysAskTools) {
         String composed = scaffoldPromptComposer.compose(agent, request);
         String base = !isBlank(composed) ? composed : "You are a helpful assistant.";
+        base = base + System.lineSeparator() + System.lineSeparator() + LANGUAGE_DIRECTIVE;
         if (runtimeSkills != null) {
             base = base + System.lineSeparator() + System.lineSeparator()
                     + runtimeSkillService.activationPrompt(runtimeSkills);
         }
         if (hasAlwaysAskTools) {
-            base = base + System.lineSeparator() + System.lineSeparator()
-                    + "Some tools require explicit user confirmation before execution"
-                    + " (marked as \"REQUIRES USER CONFIRMATION\" in their description)."
-                    + " When you want to use such a tool, you MUST first ask the user if they want to proceed."
-                    + " Only call the tool after the user explicitly confirms."
-                    + " If a tool returns \"CONFIRMATION REQUIRED\", present the confirmation request to the user"
-                    + " and wait for their response.";
+            base = base + System.lineSeparator() + System.lineSeparator() + ALWAYS_ASK_SYSTEM_PROMPT;
         }
         if (delegateAgents == null || delegateAgents.isEmpty()) {
             return base;
@@ -470,13 +518,7 @@ public class RuntimeChatService {
     }
 
     private String delegationPolicy(List<RuntimeAgentDelegate> delegateAgents) {
-        StringBuilder sb = new StringBuilder(
-                """
-                        Optional peer agents are available as tools.
-                        You are the lead agent and own the final answer.
-                        Use a peer agent only when the user's request clearly matches the peer's name, description, domain, data source, or specialty.
-                        If you call a peer, use its result as private working context and return one final assistant message.
-                        Available peer agents:""");
+        StringBuilder sb = new StringBuilder(DELEGATION_POLICY_HEADER);
         for (RuntimeAgentDelegate delegate : delegateAgents) {
             sb.append(System.lineSeparator()).append("- ").append(safeString(delegate.name()));
             if (!isBlank(delegate.description())) {
@@ -547,13 +589,13 @@ public class RuntimeChatService {
 
     private SupervisorResponseStrategy toSupervisorResponseStrategy(Object strategy) {
         String value = safeString(strategy);
+        SupervisorResponseStrategy result = SupervisorResponseStrategy.SUMMARY;
         if ("LAST".equals(value)) {
-            return SupervisorResponseStrategy.LAST;
+            result = SupervisorResponseStrategy.LAST;
+        } else if ("SCORED".equals(value)) {
+            result = SupervisorResponseStrategy.SCORED;
         }
-        if ("SCORED".equals(value)) {
-            return SupervisorResponseStrategy.SCORED;
-        }
-        return SupervisorResponseStrategy.SUMMARY;
+        return result;
     }
 
     private String outputFromScope(AgenticScope scope) {
@@ -630,20 +672,26 @@ public class RuntimeChatService {
             if (inString) {
                 continue;
             }
-            if (current == open) {
-                depth++;
-            } else if (current == close) {
-                depth--;
-                if (depth == 0) {
-                    return text.substring(start, i + 1);
-                }
+            depth += charDepthDelta(current, open, close);
+            if (depth == 0) {
+                return text.substring(start, i + 1);
             }
         }
         return null;
     }
 
+    private int charDepthDelta(char current, char open, char close) {
+        int delta = 0;
+        if (current == open) {
+            delta = 1;
+        } else if (current == close) {
+            delta = -1;
+        }
+        return delta;
+    }
+
     private void addTextToolCall(JsonNode item, Set<String> availableToolNames, List<ToolExecutionRequest> requests) {
-        if (item == null || !item.isObject()) {
+        if (!item.isObject()) {
             return;
         }
         String name = textField(item, "name");
@@ -653,14 +701,13 @@ public class RuntimeChatService {
         if (isBlank(name)) {
             name = textField(item, "tool_name");
         }
-        if (isBlank(name) || !availableToolNames.contains(name)) {
-            return;
+        if (!isBlank(name) && availableToolNames.contains(name)) {
+            requests.add(ToolExecutionRequest.builder()
+                    .id("text-tool-call-" + (requests.size() + 1))
+                    .name(name)
+                    .arguments(toolArguments(item))
+                    .build());
         }
-        requests.add(ToolExecutionRequest.builder()
-                .id("text-tool-call-" + (requests.size() + 1))
-                .name(name)
-                .arguments(toolArguments(item))
-                .build());
     }
 
     private String toolArguments(JsonNode item) {
@@ -700,11 +747,12 @@ public class RuntimeChatService {
     }
 
     private int maxSequentialToolInvocations() {
-        long configured = dispatchConfig.mcpConfig().maxIterations();
-        if (configured < 1) {
-            return 1;
+        long configured = dispatchConfig.toolConfig().maxIterations();
+        int result = 1;
+        if (configured >= 1) {
+            result = configured > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) configured;
         }
-        return configured > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) configured;
+        return result;
     }
 
     private boolean isCallableExternalAgent(ExternalAgentSnapshotDTO externalAgent) {
@@ -721,44 +769,60 @@ public class RuntimeChatService {
 
     @SuppressWarnings("unchecked")
     private String inputMessage(Object input, String fallback) {
+        String result = fallback;
         if (input instanceof CharSequence text && !isBlank(text.toString())) {
-            return text.toString();
-        }
-        if (input instanceof Map<?, ?> map) {
+            result = text.toString();
+        } else if (input instanceof Map<?, ?> map) {
             Object message = ((Map<String, Object>) map).get("message");
             if (message != null && !isBlank(message.toString())) {
-                return message.toString();
+                result = message.toString();
             }
         }
-        return fallback;
+        return result;
     }
 
     private String extractUserMessage(ChatRequestDTO request) {
-        if (request == null || request.getChatMessage() == null || request.getChatMessage().getMessage() == null) {
-            return "";
+        String result = "";
+        if (request != null && request.getChatMessage() != null && request.getChatMessage().getMessage() != null) {
+            result = request.getChatMessage().getMessage();
         }
-        return request.getChatMessage().getMessage();
+        return result;
     }
 
-    private boolean isUserConfirmationPresent(ChatRequestDTO request, String toolName) {
-        if (request == null || request.getConversation() == null || request.getConversation().getHistory() == null) {
+    private boolean isUserConfirmationPresent(ChatRequestDTO request, ChatModel chatModel) {
+        String lastUserMessage = extractLastUserMessage(request);
+        if (isBlank(lastUserMessage)) {
             return false;
         }
-        List<ChatMessageDTO> history = request.getConversation().getHistory();
-        for (int i = history.size() - 1; i >= 0; i--) {
-            ChatMessageDTO msg = history.get(i);
-            if ("USER".equals(msg.getType())) {
-                String text = safeString(msg.getMessage()).toLowerCase().trim();
-                String[] tokens = text.split("[\\s,;.!?]+");
-                for (String token : tokens) {
-                    if (CONFIRMATION_WORDS.contains(token)) {
-                        return true;
-                    }
+        boolean confirmed = false;
+        try {
+            String response = chatModel.chat(CONFIRMATION_PROMPT_TEMPLATE.formatted(lastUserMessage));
+            confirmed = response != null && response.trim().toUpperCase().startsWith("YES");
+        } catch (Exception ex) {
+            log.warn("LLM confirmation detection failed, falling back to denial: {}", ex.getMessage());
+        }
+        return confirmed;
+    }
+
+    private String extractLastUserMessage(ChatRequestDTO request) {
+        if (request == null) {
+            return null;
+        }
+        // Check the current chat message first — it is the latest user input
+        if (request.getChatMessage() != null && "USER".equals(request.getChatMessage().getType())) {
+            return request.getChatMessage().getMessage();
+        }
+        // Fall back to conversation history
+        if (request.getConversation() != null && request.getConversation().getHistory() != null) {
+            List<ChatMessageDTO> history = request.getConversation().getHistory();
+            for (int i = history.size() - 1; i >= 0; i--) {
+                ChatMessageDTO msg = history.get(i);
+                if ("USER".equals(msg.getType())) {
+                    return msg.getMessage();
                 }
-                return false;
             }
         }
-        return false;
+        return null;
     }
 
     private String delegateToolBaseName(String name) {
@@ -809,12 +873,13 @@ public class RuntimeChatService {
     }
 
     private Throwable rootCause(Throwable throwable) {
-        if (throwable == null) {
-            return new RuntimeException("unknown failure");
-        }
         Throwable result = throwable;
-        while (result.getCause() != null && result.getCause() != result) {
-            result = result.getCause();
+        if (throwable == null) {
+            result = new RuntimeException("unknown failure");
+        } else {
+            while (result.getCause() != null && result.getCause() != result) {
+                result = result.getCause();
+            }
         }
         return result;
     }
@@ -831,6 +896,14 @@ public class RuntimeChatService {
         Response.Status status = cause instanceof TimeoutException ? Response.Status.GATEWAY_TIMEOUT
                 : Response.Status.INTERNAL_SERVER_ERROR;
         return new RuntimeChatException(errorCode, type, message, status, cause);
+    }
+
+    static Method methodLookup(Class<?> type, String name, Class<?>... paramTypes) {
+        try {
+            return type.getMethod(name, paramTypes);
+        } catch (NoSuchMethodException ex) {
+            throw new IllegalStateException("Unable to resolve method " + name + " on " + type.getName(), ex);
+        }
     }
 
     private interface LocalChatAgent {
@@ -866,7 +939,7 @@ public class RuntimeChatService {
 
     public static final class LocalAgenticAction implements AgentSpecsProvider {
 
-        private static final java.lang.reflect.Method INVOKE_METHOD = invokeMethod();
+        private static final Method INVOKE_METHOD = invokeMethod();
 
         private final String name;
         private final String description;
@@ -914,22 +987,18 @@ public class RuntimeChatService {
             return null;
         }
 
-        private static java.lang.reflect.Method invokeMethod() {
-            try {
-                return LocalAgenticAction.class.getMethod("invoke", AgenticScope.class);
-            } catch (NoSuchMethodException ex) {
-                throw new IllegalStateException("Unable to resolve local agentic action method", ex);
-            }
+        private static Method invokeMethod() {
+            return methodLookup(LocalAgenticAction.class, "invoke", AgenticScope.class);
         }
 
         private static boolean blank(String value) {
-            return value == null || value.trim().isEmpty();
+            return value.trim().isEmpty();
         }
     }
 
     public static final class LazySupervisorAgenticAction implements AgentSpecsProvider {
 
-        private static final java.lang.reflect.Method INVOKE_METHOD = invokeMethod();
+        private static final Method INVOKE_METHOD = invokeMethod();
 
         private final String name;
         private final String description;
@@ -950,15 +1019,16 @@ public class RuntimeChatService {
             long startedAt = System.currentTimeMillis();
             log.info("Invoking supervisor-selected agent: groupId={}, agent={}", groupId, name);
             try (RuntimeAgent runtimeAgent = supplier.get()) {
-                if (runtimeAgent == null) {
-                    return "";
+                String response = "";
+                if (runtimeAgent != null) {
+                    Object result = runtimeAgent.invoker()
+                            .invokeWithAgenticScope(Map.of("message", resolveMessage(scope)))
+                            .result();
+                    log.info("Completed supervisor-selected agent: groupId={}, agent={}, durationMs={}", groupId, name,
+                            System.currentTimeMillis() - startedAt);
+                    response = result != null ? result.toString() : "";
                 }
-                Object result = runtimeAgent.invoker()
-                        .invokeWithAgenticScope(Map.of("message", resolveMessage(scope)))
-                        .result();
-                log.info("Completed supervisor-selected agent: groupId={}, agent={}, durationMs={}", groupId, name,
-                        System.currentTimeMillis() - startedAt);
-                return result != null ? result.toString() : "";
+                return response;
             }
         }
 
@@ -988,22 +1058,19 @@ public class RuntimeChatService {
 
         private String resolveMessage(AgenticScope scope) {
             Object message = scope != null ? scope.readState("message") : null;
+            String result = fallbackMessage;
             if (message != null && !blank(message.toString())) {
-                return message.toString();
+                result = message.toString();
             }
-            return fallbackMessage != null ? fallbackMessage : "";
+            return result;
         }
 
-        private static java.lang.reflect.Method invokeMethod() {
-            try {
-                return LazySupervisorAgenticAction.class.getMethod("invoke", AgenticScope.class);
-            } catch (NoSuchMethodException ex) {
-                throw new IllegalStateException("Unable to resolve lazy supervisor agent method", ex);
-            }
+        private static Method invokeMethod() {
+            return methodLookup(LazySupervisorAgenticAction.class, "invoke", AgenticScope.class);
         }
 
         private static boolean blank(String value) {
-            return value == null || value.trim().isEmpty();
+            return value.trim().isEmpty();
         }
     }
 
@@ -1047,16 +1114,17 @@ public class RuntimeChatService {
         }
 
         private static String lastOutput(AgenticScope scope) {
-            if (scope == null || scope.agentInvocations() == null || scope.agentInvocations().isEmpty()) {
-                return "";
+            String result = "";
+            if (scope != null && scope.agentInvocations() != null && !scope.agentInvocations().isEmpty()) {
+                result = scope.agentInvocations().stream()
+                        .map(AgentInvocation::output)
+                        .filter(Objects::nonNull)
+                        .map(Object::toString)
+                        .filter(output -> !output.isBlank())
+                        .reduce((previous, current) -> current)
+                        .orElse("");
             }
-            return scope.agentInvocations().stream()
-                    .map(AgentInvocation::output)
-                    .filter(Objects::nonNull)
-                    .map(Object::toString)
-                    .filter(output -> !output.isBlank())
-                    .reduce((previous, current) -> current)
-                    .orElse("");
+            return result;
         }
 
         private static String safeName(String name) {

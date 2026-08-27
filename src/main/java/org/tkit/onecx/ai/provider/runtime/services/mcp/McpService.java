@@ -9,7 +9,6 @@ import java.util.stream.Collectors;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.tkit.onecx.ai.provider.runtime.config.DispatchConfig;
@@ -40,12 +39,6 @@ public class McpService {
 
     @Inject
     McpPropagatedHeaders mcpPropagatedHeaders;
-
-    @ConfigProperty(name = "onecx.ai.tools.enforcement-enabled", defaultValue = "true")
-    boolean enforcementEnabled;
-
-    @ConfigProperty(name = "onecx.ai.tools.legacy-allow-all", defaultValue = "true")
-    boolean legacyAllowAll;
 
     public McpToolRegistry createToolRegistry(AgentSnapshotDTO agent) {
         if (agent == null || agent.getTools() == null || agent.getTools().isEmpty()) {
@@ -107,16 +100,16 @@ public class McpService {
 
     protected List<ToolSpecification> receiveToolSpecificationsFallback(McpClient client) {
         log.warn("Failed to receive MCP tool specifications after retries: {}",
-                dispatchConfig.mcpConfig().maxToolExecutionRetries());
+                dispatchConfig.toolConfig().maxToolExecutionRetries());
         return List.of();
     }
 
     protected McpClient createMcpClient(ToolSnapshotDTO tool) {
         var transportBuilder = StreamableHttpMcpTransport.builder()
                 .url(tool.getUrl())
-                .timeout(Duration.ofSeconds(dispatchConfig.mcpConfig().maxTimeout()))
-                .logRequests(dispatchConfig.mcpConfig().logRequests())
-                .logResponses(dispatchConfig.mcpConfig().logResponse());
+                .timeout(Duration.ofSeconds(dispatchConfig.toolConfig().maxTimeout()))
+                .logRequests(dispatchConfig.toolConfig().logRequests())
+                .logResponses(dispatchConfig.toolConfig().logResponse());
 
         Map<String, String> propagatedHeaders = mcpPropagatedHeaders.currentHeaders();
         if (isOAuth2(tool)) {
@@ -124,11 +117,14 @@ public class McpService {
             if (authorizationHeaders.isEmpty()) {
                 throw new IllegalStateException("OAuth2 MCP authorization is not available");
             }
+            // Snapshot `propagatedHeaders` is safe here because createMcpClient is invoked
+            // per chat request (RuntimeChatService.buildLocalAgent) and the McpClient lives
+            // only within that single RoutingContext. If the client ever gets cached/reused
+            // across requests, switch back to mcpPropagatedHeaders.currentHeaders() per call.
             transportBuilder.customHeaders(context -> {
-                Map<String, String> currentPropagatedHeaders = mcpPropagatedHeaders.currentHeaders();
                 Map<String, String> refreshedAuthorizationHeaders = mcpAuthHeaders.authorizationHeaders(tool,
-                        currentPropagatedHeaders);
-                return mergeHeaders(currentPropagatedHeaders,
+                        propagatedHeaders);
+                return mergeHeaders(propagatedHeaders,
                         refreshedAuthorizationHeaders.isEmpty() ? authorizationHeaders : refreshedAuthorizationHeaders);
             });
         } else if (!isBlank(tool.getApiKey())) {
@@ -167,12 +163,12 @@ public class McpService {
     }
 
     private List<ToolSpecification> filterByRules(ToolSnapshotDTO tool, List<ToolSpecification> specifications) {
-        if (!enforcementEnabled) {
+        if (!dispatchConfig.toolConfig().enforcementEnabled()) {
             return specifications;
         }
         List<ToolRuleSnapshotDTO> rules = tool.getToolRules();
         if (rules == null || rules.isEmpty()) {
-            if (legacyAllowAll) {
+            if (dispatchConfig.toolConfig().legacyAllowAll()) {
                 log.warn("MCP server '{}' has no tool rules configured — legacy allow-all in effect",
                         tool.getName());
                 return specifications;
@@ -207,24 +203,32 @@ public class McpService {
         if (metadata == null || metadata.isEmpty()) {
             return null;
         }
-        DiscoveredToolAnnotationsDTO annotations = new DiscoveredToolAnnotationsDTO();
-        annotations.setReadOnlyHint(boolMeta(metadata, McpToolMetadataKeys.READ_ONLY_HINT));
-        annotations.setDestructiveHint(boolMeta(metadata, McpToolMetadataKeys.DESTRUCTIVE_HINT));
-        annotations.setIdempotentHint(boolMeta(metadata, McpToolMetadataKeys.IDEMPOTENT_HINT));
-        annotations.setOpenWorldHint(boolMeta(metadata, McpToolMetadataKeys.OPEN_WORLD_HINT));
-        if (annotations.getReadOnlyHint() == null && annotations.getDestructiveHint() == null
-                && annotations.getIdempotentHint() == null && annotations.getOpenWorldHint() == null) {
+        boolean readOnly = boolMeta(metadata, McpToolMetadataKeys.READ_ONLY_HINT);
+        boolean destructive = boolMeta(metadata, McpToolMetadataKeys.DESTRUCTIVE_HINT);
+        boolean idempotent = boolMeta(metadata, McpToolMetadataKeys.IDEMPOTENT_HINT);
+        boolean openWorld = boolMeta(metadata, McpToolMetadataKeys.OPEN_WORLD_HINT);
+        if (!readOnly && !destructive && !idempotent && !openWorld) {
             return null;
+        }
+        DiscoveredToolAnnotationsDTO annotations = new DiscoveredToolAnnotationsDTO();
+        if (readOnly) {
+            annotations.setReadOnlyHint(true);
+        }
+        if (destructive) {
+            annotations.setDestructiveHint(true);
+        }
+        if (idempotent) {
+            annotations.setIdempotentHint(true);
+        }
+        if (openWorld) {
+            annotations.setOpenWorldHint(true);
         }
         return annotations;
     }
 
-    private Boolean boolMeta(Map<String, Object> metadata, String key) {
+    private boolean boolMeta(Map<String, Object> metadata, String key) {
         Object value = metadata.get(key);
-        if (value instanceof Boolean b) {
-            return b ? Boolean.TRUE : null;
-        }
-        return null;
+        return value instanceof Boolean b && b;
     }
 
     private void closeQuietly(McpClient client) {
