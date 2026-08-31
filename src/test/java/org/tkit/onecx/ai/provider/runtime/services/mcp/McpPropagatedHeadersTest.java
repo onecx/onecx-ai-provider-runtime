@@ -31,6 +31,22 @@ class McpPropagatedHeadersTest {
         assertThat(headers.currentHeaders()).isEmpty();
     }
 
+    @Test
+    void snapshot_cachesHeaders_evenAfterRoutingContextBecomesUnavailable() {
+        McpPropagatedHeaders headers = new McpPropagatedHeaders();
+        headers.routingContext = routingContext("principal-token");
+
+        headers.snapshot();
+
+        // Simulate loss of RoutingContext (e.g. we moved to a ManagedExecutor thread).
+        @SuppressWarnings("unchecked")
+        Instance<RoutingContext> unavailable = mock(Instance.class);
+        when(unavailable.isUnsatisfied()).thenReturn(true);
+        headers.routingContext = unavailable;
+
+        assertThat(headers.currentHeaders()).containsEntry("apm-principal-token", "principal-token");
+    }
+
     @SuppressWarnings("unchecked")
     private static Instance<RoutingContext> routingContext(String token) {
         HttpServerRequest request = mock(HttpServerRequest.class);

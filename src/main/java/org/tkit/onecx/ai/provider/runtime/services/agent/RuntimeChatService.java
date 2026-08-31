@@ -27,6 +27,7 @@ import org.tkit.onecx.ai.provider.runtime.common.RuntimeChatException;
 import org.tkit.onecx.ai.provider.runtime.config.DispatchConfig;
 import org.tkit.onecx.ai.provider.runtime.services.external.AgentCard;
 import org.tkit.onecx.ai.provider.runtime.services.external.ExternalAgentDiscoveryService;
+import org.tkit.onecx.ai.provider.runtime.services.mcp.McpPropagatedHeaders;
 import org.tkit.onecx.ai.provider.runtime.services.mcp.McpService;
 import org.tkit.onecx.ai.provider.runtime.services.mcp.McpTool;
 import org.tkit.onecx.ai.provider.runtime.services.mcp.McpToolRegistry;
@@ -124,6 +125,9 @@ public class RuntimeChatService {
     McpService mcpService;
 
     @Inject
+    McpPropagatedHeaders mcpPropagatedHeaders;
+
+    @Inject
     ExternalAgentDiscoveryService externalAgentDiscoveryService;
 
     @Inject
@@ -143,6 +147,15 @@ public class RuntimeChatService {
         if (request == null || request.getRootAgent() == null) {
             throw new RuntimeChatException("RUNTIME_CHAT_REQUEST_INVALID", "IllegalArgumentException",
                     "Root agent snapshot is required", Response.Status.BAD_REQUEST);
+        }
+        // Capture propagated request headers (e.g. apm-principal-token) on the request
+        // thread BEFORE the async dispatch. The Vert.x RoutingContext is bound to the
+        // Vert.x request thread and is not propagated by ManagedExecutor, so if we don't
+        // snapshot it here the propagated headers would be silently lost on the async thread
+        // McpClientAuthProvider). The CDI @RequestScoped scope of McpPropagatedHeaders
+        // IS propagated by ManagedExecutor, so the snapshot stays visible downstream.
+        if (mcpPropagatedHeaders != null) {
+            mcpPropagatedHeaders.snapshot();
         }
         CompletableFuture<RuntimeChatResponseDTO> future = CompletableFuture.supplyAsync(() -> invoke(request),
                 runtimeExecutor());
