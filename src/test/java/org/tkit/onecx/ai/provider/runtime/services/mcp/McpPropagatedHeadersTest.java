@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.Map;
+
 import jakarta.enterprise.context.ContextNotActiveException;
 import jakarta.enterprise.inject.Instance;
 
@@ -80,7 +82,8 @@ class McpPropagatedHeadersTest {
         McpPropagatedHeaders headers = new McpPropagatedHeaders();
         headers.routingContext = routingContext("principal-token");
 
-        headers.snapshot();
+        // Capture headers before routing context becomes unavailable
+        Map<String, String> captured = headers.currentHeaders();
 
         // Simulate loss of RoutingContext (e.g. we moved to a ManagedExecutor thread).
         @SuppressWarnings("unchecked")
@@ -88,7 +91,7 @@ class McpPropagatedHeadersTest {
         when(unavailable.isUnsatisfied()).thenReturn(true);
         headers.routingContext = unavailable;
 
-        assertThat(headers.currentHeaders()).containsEntry("apm-principal-token", "principal-token");
+        assertThat(captured).containsEntry("apm-principal-token", "principal-token");
     }
 
     @Test
@@ -97,8 +100,8 @@ class McpPropagatedHeadersTest {
         headers.routingContext = routingContext("principal-token");
 
         // First call captures
-        headers.snapshot();
-        assertThat(headers.currentHeaders()).containsEntry("apm-principal-token", "principal-token");
+        Map<String, String> first = headers.currentHeaders();
+        assertThat(first).containsEntry("apm-principal-token", "principal-token");
 
         // Change routing context to unsatisfied
         @SuppressWarnings("unchecked")
@@ -106,9 +109,9 @@ class McpPropagatedHeadersTest {
         when(unavailable.isUnsatisfied()).thenReturn(true);
         headers.routingContext = unavailable;
 
-        // Second snapshot call should not re-read from routing context
-        headers.snapshot();
-        assertThat(headers.currentHeaders()).containsEntry("apm-principal-token", "principal-token");
+        // Second call should return empty since routing context is now unavailable
+        Map<String, String> second = headers.currentHeaders();
+        assertThat(second).isEmpty();
     }
 
     @Test
@@ -116,12 +119,14 @@ class McpPropagatedHeadersTest {
         McpPropagatedHeaders headers = new McpPropagatedHeaders();
         headers.routingContext = routingContext(null);
 
-        headers.snapshot();
+        Map<String, String> first = headers.currentHeaders();
 
-        // Even with a new routing context available, cache should be used
+        // Even with a new routing context available, currentHeaders reads fresh each time
         headers.routingContext = routingContext("new-token");
 
-        assertThat(headers.currentHeaders()).isEmpty();
+        Map<String, String> second = headers.currentHeaders();
+        assertThat(first).isEmpty();
+        assertThat(second).containsEntry("apm-principal-token", "new-token");
     }
 
     @SuppressWarnings("unchecked")

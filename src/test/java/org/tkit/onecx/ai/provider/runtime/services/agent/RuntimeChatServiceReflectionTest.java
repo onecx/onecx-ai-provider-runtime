@@ -41,6 +41,7 @@ import org.tkit.onecx.ai.provider.runtime.common.RuntimeChatException;
 import org.tkit.onecx.ai.provider.runtime.config.DispatchConfig;
 import org.tkit.onecx.ai.provider.runtime.services.external.AgentCard;
 import org.tkit.onecx.ai.provider.runtime.services.external.ExternalAgentDiscoveryService;
+import org.tkit.onecx.ai.provider.runtime.services.mcp.McpPropagatedHeaders;
 import org.tkit.onecx.ai.provider.runtime.services.mcp.McpService;
 import org.tkit.onecx.ai.provider.runtime.services.mcp.McpTool;
 import org.tkit.onecx.ai.provider.runtime.services.mcp.McpToolRegistry;
@@ -102,6 +103,8 @@ class RuntimeChatServiceReflectionTest {
         service.dispatchConfig = dispatchConfig(3L);
         service.scaffoldPromptComposer = new ScaffoldPromptComposer();
         service.externalAgentDiscoveryService = mock(ExternalAgentDiscoveryService.class);
+        service.mcpPropagatedHeaders = mock(McpPropagatedHeaders.class);
+        when(service.mcpPropagatedHeaders.currentHeaders()).thenReturn(Map.of());
     }
 
     @Test
@@ -302,12 +305,13 @@ class RuntimeChatServiceReflectionTest {
 
         @SuppressWarnings("unchecked")
         List<RuntimeAgentDelegate> delegates = (List<RuntimeAgentDelegate>) invoke("delegatesForGroup",
-                new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class }, group, chatRequest("hi"));
+                new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class }, group, chatRequest("hi"),
+                Map.of());
         assertThat(delegates).extracting(RuntimeAgentDelegate::name)
                 .containsExactly("A local", "B local", "C remote");
 
-        assertThat(invoke("delegatesForGroup", new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                null, chatRequest("hi"))).isEqualTo(List.of());
+        assertThat(invoke("delegatesForGroup", new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                null, chatRequest("hi"), Map.of())).isEqualTo(List.of());
 
         assertThat(invoke("buildRemoteAgent", new Class[] { ExternalAgentSnapshotDTO.class },
                 externalAgent("Auth", "Auth", true, "http://discover", "secret"))).isNull();
@@ -819,7 +823,7 @@ class RuntimeChatServiceReflectionTest {
         McpClient client = mock(McpClient.class);
         McpTool alwaysAskByAllowed = new McpTool("srv", "http://mcp", toolSpec("ask-by-allowed"), client,
                 null, "ALWAYS_ASK");
-        when(svc.mcpService.createToolRegistry(ArgumentMatchers.any()))
+        when(svc.mcpService.createToolRegistry(ArgumentMatchers.any(), ArgumentMatchers.any()))
                 .thenReturn(new McpToolRegistry(List.of(alwaysAskByAllowed)));
 
         try (MockedStatic<AiServices> aiServicesStatic = Mockito
@@ -832,8 +836,8 @@ class RuntimeChatServiceReflectionTest {
             when(mockBuilder.toolProvider(ArgumentMatchers.any())).thenReturn(mockBuilder);
 
             Object result = invoke(svc, "buildLocalAgent",
-                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, List.class },
-                    agent("test", "desc"), chatRequest("hello"), null);
+                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, List.class, Map.class },
+                    agent("test", "desc"), chatRequest("hello"), null, Map.of());
             assertThat(result).isNotNull();
         }
     }
@@ -954,8 +958,8 @@ class RuntimeChatServiceReflectionTest {
         agent.setA2aEnabled(true);
         agent.setGroups(List.of());
         assertThat((String) invoke("executeGroups",
-                new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class },
-                agent, chatRequest("hi"))).isEmpty();
+                new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                agent, chatRequest("hi"), Map.of())).isEmpty();
     }
 
     @Test
@@ -966,8 +970,8 @@ class RuntimeChatServiceReflectionTest {
         group.setName(null);
         agent.setGroups(List.of(group));
         assertThat((String) invoke("executeGroups",
-                new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class },
-                agent, chatRequest("hi"))).isEmpty();
+                new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                agent, chatRequest("hi"), Map.of())).isEmpty();
     }
 
     @Test
@@ -980,8 +984,8 @@ class RuntimeChatServiceReflectionTest {
         validGroup.setAgents(List.of());
         agent.setGroups(Arrays.asList(null, validGroup, null));
         assertThat((String) invoke("executeGroups",
-                new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class },
-                agent, chatRequest("hi"))).isEmpty();
+                new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                agent, chatRequest("hi"), Map.of())).isEmpty();
     }
 
     @Test
@@ -995,7 +999,7 @@ class RuntimeChatServiceReflectionTest {
         service.runtimeSkillService = mock(RuntimeSkillService.class);
         ChatModel chatModel = mock(ChatModel.class);
         when(service.chatModelFactory.createChatModel(ArgumentMatchers.any())).thenReturn(chatModel);
-        when(service.mcpService.createToolRegistry(ArgumentMatchers.any()))
+        when(service.mcpService.createToolRegistry(ArgumentMatchers.any(), ArgumentMatchers.any()))
                 .thenReturn(McpToolRegistry.empty());
         when(service.runtimeSkillService.runtimeSkills(ArgumentMatchers.any())).thenReturn(null);
 
@@ -1004,8 +1008,8 @@ class RuntimeChatServiceReflectionTest {
             setupMockLocalChatAgent(aiServicesStatic);
 
             String result = (String) invoke("invokeRootResponse",
-                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class },
-                    agent, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    agent, chatRequest("hello"), Map.of());
             assertThat(result).isEmpty();
         }
     }
@@ -1212,7 +1216,7 @@ class RuntimeChatServiceReflectionTest {
             request.setRootAgent(agent("root", "root desc"));
             request.setChatRequest(chatRequest("hello"));
             RuntimeChatResponseDTO response = (RuntimeChatResponseDTO) invoke("invoke",
-                    new Class[] { RuntimeChatRequestDTO.class }, request);
+                    new Class[] { RuntimeChatRequestDTO.class, Map.class }, request, Map.of());
             assertThat(response).isNotNull();
             assertThat(response.getMessage()).isNotNull();
         }
@@ -1236,7 +1240,7 @@ class RuntimeChatServiceReflectionTest {
         request.setChatRequest(chatRequest("hello"));
 
         assertThatThrownBy(() -> invoke("invoke",
-                new Class[] { RuntimeChatRequestDTO.class }, request))
+                new Class[] { RuntimeChatRequestDTO.class, Map.class }, request, Map.of()))
                 .isInstanceOf(InvocationTargetException.class)
                 .hasCauseInstanceOf(RuntimeChatException.class);
     }
@@ -1257,7 +1261,7 @@ class RuntimeChatServiceReflectionTest {
             request.setRootAgent(rootAgent);
             request.setChatRequest(chatRequest("hello"));
             RuntimeChatResponseDTO response = (RuntimeChatResponseDTO) invoke("invoke",
-                    new Class[] { RuntimeChatRequestDTO.class }, request);
+                    new Class[] { RuntimeChatRequestDTO.class, Map.class }, request, Map.of());
             assertThat(response).isNotNull();
             assertThat(response.getMessage()).isNotNull();
         }
@@ -1270,7 +1274,7 @@ class RuntimeChatServiceReflectionTest {
         service.managedExecutor = null;
         when(service.chatModelFactory.createChatModel(ArgumentMatchers.any()))
                 .thenReturn(mock(ChatModel.class));
-        when(service.mcpService.createToolRegistry(ArgumentMatchers.any()))
+        when(service.mcpService.createToolRegistry(ArgumentMatchers.any(), ArgumentMatchers.any()))
                 .thenReturn(McpToolRegistry.empty());
         when(service.runtimeSkillService.runtimeSkills(ArgumentMatchers.any())).thenReturn(null);
     }
@@ -1544,7 +1548,7 @@ class RuntimeChatServiceReflectionTest {
         service.runtimeSkillService = mock(RuntimeSkillService.class);
         when(service.chatModelFactory.createChatModel(ArgumentMatchers.any()))
                 .thenReturn(mock(ChatModel.class));
-        when(service.mcpService.createToolRegistry(ArgumentMatchers.any()))
+        when(service.mcpService.createToolRegistry(ArgumentMatchers.any(), ArgumentMatchers.any()))
                 .thenReturn(McpToolRegistry.empty());
         when(service.runtimeSkillService.runtimeSkills(ArgumentMatchers.any())).thenReturn(null);
 
@@ -1553,8 +1557,8 @@ class RuntimeChatServiceReflectionTest {
             setupMockLocalChatAgent(aiServicesStatic);
 
             String result = (String) invoke("executeGroup",
-                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                    rootAgent, group, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    rootAgent, group, chatRequest("hello"), Map.of());
             assertThat(result).isNotNull();
         }
     }
@@ -1571,8 +1575,8 @@ class RuntimeChatServiceReflectionTest {
         rootAgent.setGroups(List.of(group));
 
         String result = (String) invoke("executeGroup",
-                new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                rootAgent, group, chatRequest("hello"));
+                new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                rootAgent, group, chatRequest("hello"), Map.of());
         assertThat(result).isEmpty();
     }
 
@@ -1588,8 +1592,8 @@ class RuntimeChatServiceReflectionTest {
         group.setExternalAgents(List.of());
 
         String result = (String) invoke("executeGroup",
-                new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                rootAgent, group, chatRequest("hello"));
+                new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                rootAgent, group, chatRequest("hello"), Map.of());
         assertThat(result).isEmpty();
     }
 
@@ -1644,8 +1648,8 @@ class RuntimeChatServiceReflectionTest {
             setupMockLocalChatAgent(aiServicesStatic);
 
             String result = (String) invoke("invokeRootResponse",
-                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class },
-                    agent, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    agent, chatRequest("hello"), Map.of());
             assertThat(result).isNotNull();
         }
     }
@@ -1656,8 +1660,8 @@ class RuntimeChatServiceReflectionTest {
     void delegatesForGroup_returnsEmptyForNullGroup() throws Exception {
         @SuppressWarnings("unchecked")
         List<RuntimeAgentDelegate> result = (List<RuntimeAgentDelegate>) invoke("delegatesForGroup",
-                new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                null, chatRequest("hi"));
+                new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                null, chatRequest("hi"), Map.of());
         assertThat(result).isEmpty();
     }
 
@@ -1675,14 +1679,14 @@ class RuntimeChatServiceReflectionTest {
         service.runtimeSkillService = mock(RuntimeSkillService.class);
         when(service.chatModelFactory.createChatModel(ArgumentMatchers.any()))
                 .thenReturn(mock(ChatModel.class));
-        when(service.mcpService.createToolRegistry(ArgumentMatchers.any()))
+        when(service.mcpService.createToolRegistry(ArgumentMatchers.any(), ArgumentMatchers.any()))
                 .thenReturn(McpToolRegistry.empty());
         when(service.runtimeSkillService.runtimeSkills(ArgumentMatchers.any())).thenReturn(null);
 
         @SuppressWarnings("unchecked")
         List<RuntimeAgentDelegate> result = (List<RuntimeAgentDelegate>) invoke("delegatesForGroup",
-                new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                group, chatRequest("hi"));
+                new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                group, chatRequest("hi"), Map.of());
         assertThat(result)
                 .hasSize(2)
                 .extracting(RuntimeAgentDelegate::name)
@@ -1700,8 +1704,8 @@ class RuntimeChatServiceReflectionTest {
 
         @SuppressWarnings("unchecked")
         List<RuntimeAgentDelegate> result = (List<RuntimeAgentDelegate>) invoke("delegatesForGroup",
-                new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                group, chatRequest("hi"));
+                new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                group, chatRequest("hi"), Map.of());
         assertThat(result).hasSize(1);
         assertThat(result.get(0).name()).isEqualTo("internal-agent");
     }
@@ -1717,8 +1721,8 @@ class RuntimeChatServiceReflectionTest {
 
         @SuppressWarnings("unchecked")
         List<RuntimeAgentDelegate> result = (List<RuntimeAgentDelegate>) invoke("delegatesForGroup",
-                new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                group, chatRequest("hi"));
+                new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                group, chatRequest("hi"), Map.of());
         assertThat(result).hasSize(1);
         assertThat(result.get(0).name()).isEqualTo("valid-ext");
     }
@@ -1797,8 +1801,8 @@ class RuntimeChatServiceReflectionTest {
             setupMockLocalChatAgent(aiServicesStatic);
 
             String result = (String) invoke("invokeRootResponse",
-                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class },
-                    agent, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    agent, chatRequest("hello"), Map.of());
             assertThat(result).isNotNull();
         }
     }
@@ -1818,8 +1822,8 @@ class RuntimeChatServiceReflectionTest {
             setupMockLocalChatAgent(aiServicesStatic);
 
             String result = (String) invoke("invokeRootResponse",
-                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class },
-                    agent, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    agent, chatRequest("hello"), Map.of());
             assertThat(result).isNotNull();
         }
     }
@@ -1852,16 +1856,16 @@ class RuntimeChatServiceReflectionTest {
             agenticStatic.when(AgenticServices::supervisorBuilder).thenReturn(supBuilder);
 
             String result = (String) invoke("executeSupervisorRoutedGroup",
-                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                    rootAgent, group, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    rootAgent, group, chatRequest("hello"), Map.of());
             assertThat(result).isEmpty();
 
             // Also cover the case where supervisor returns ResultWithAgenticScope with null result
             when(mockSupervisor.invokeWithAgenticScope(ArgumentMatchers.anyString()))
                     .thenReturn(new ResultWithAgenticScope<>(null, null));
             String resultWithNullScope = (String) invoke("executeSupervisorRoutedGroup",
-                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                    rootAgent, group, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    rootAgent, group, chatRequest("hello"), Map.of());
             assertThat(resultWithNullScope).isEmpty();
         }
     }
@@ -2008,8 +2012,8 @@ class RuntimeChatServiceReflectionTest {
 
         @SuppressWarnings("unchecked")
         List<RuntimeAgentDelegate> result = (List<RuntimeAgentDelegate>) invoke("delegatesForGroup",
-                new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                group, chatRequest("hi"));
+                new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                group, chatRequest("hi"), Map.of());
         assertThat(result).hasSize(1);
         assertThat(result.get(0).name()).isEqualTo("valid-ext");
     }
@@ -2068,8 +2072,8 @@ class RuntimeChatServiceReflectionTest {
             setupMockLocalChatAgent(aiServicesStatic);
 
             String result = (String) invoke("invokeRootResponse",
-                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class },
-                    agent, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    agent, chatRequest("hello"), Map.of());
             assertThat(result).isNotNull();
         }
     }
@@ -2166,14 +2170,14 @@ class RuntimeChatServiceReflectionTest {
         service.runtimeSkillService = mock(RuntimeSkillService.class);
         when(service.chatModelFactory.createChatModel(ArgumentMatchers.any()))
                 .thenReturn(mock(ChatModel.class));
-        when(service.mcpService.createToolRegistry(ArgumentMatchers.any()))
+        when(service.mcpService.createToolRegistry(ArgumentMatchers.any(), ArgumentMatchers.any()))
                 .thenReturn(McpToolRegistry.empty());
         when(service.runtimeSkillService.runtimeSkills(ArgumentMatchers.any())).thenReturn(null);
 
         @SuppressWarnings("unchecked")
         List<RuntimeAgentDelegate> delegates = (List<RuntimeAgentDelegate>) invoke("delegatesForGroup",
-                new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                group, chatRequest("hi"));
+                new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                group, chatRequest("hi"), Map.of());
         assertThat(delegates)
                 .hasSize(2)
                 .extracting(RuntimeAgentDelegate::name)
@@ -2239,7 +2243,7 @@ class RuntimeChatServiceReflectionTest {
 
         ChatModel chatModel = mock(ChatModel.class);
         when(svc.chatModelFactory.createChatModel(ArgumentMatchers.any())).thenReturn(chatModel);
-        when(svc.mcpService.createToolRegistry(ArgumentMatchers.any()))
+        when(svc.mcpService.createToolRegistry(ArgumentMatchers.any(), ArgumentMatchers.any()))
                 .thenReturn(McpToolRegistry.empty());
 
         Skills skills = Skills.from(
@@ -2256,8 +2260,8 @@ class RuntimeChatServiceReflectionTest {
             when(mockBuilder.toolProvider(ArgumentMatchers.any())).thenReturn(mockBuilder);
 
             Object result = invoke(svc, "buildLocalAgent",
-                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, List.class },
-                    agent("test", "desc"), chatRequest("hello"), null);
+                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, List.class, Map.class },
+                    agent("test", "desc"), chatRequest("hello"), null, Map.of());
             assertThat(result).isNotNull();
             Mockito.verify(mockBuilder).toolProvider(ArgumentMatchers.any());
         }
@@ -2277,7 +2281,7 @@ class RuntimeChatServiceReflectionTest {
         service.runtimeSkillService = mock(RuntimeSkillService.class);
         when(service.chatModelFactory.createChatModel(ArgumentMatchers.any()))
                 .thenReturn(mock(ChatModel.class));
-        when(service.mcpService.createToolRegistry(ArgumentMatchers.any()))
+        when(service.mcpService.createToolRegistry(ArgumentMatchers.any(), ArgumentMatchers.any()))
                 .thenReturn(McpToolRegistry.empty());
         when(service.runtimeSkillService.runtimeSkills(ArgumentMatchers.any())).thenReturn(null);
 
@@ -2286,8 +2290,8 @@ class RuntimeChatServiceReflectionTest {
             setupMockLocalChatAgent(aiServicesStatic);
 
             String result = (String) invoke("executeGroup",
-                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                    rootAgent, group, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    rootAgent, group, chatRequest("hello"), Map.of());
             assertThat(result).isNotNull();
         }
     }
@@ -2306,7 +2310,7 @@ class RuntimeChatServiceReflectionTest {
         service.runtimeSkillService = mock(RuntimeSkillService.class);
         when(service.chatModelFactory.createChatModel(ArgumentMatchers.any()))
                 .thenReturn(mock(ChatModel.class));
-        when(service.mcpService.createToolRegistry(ArgumentMatchers.any()))
+        when(service.mcpService.createToolRegistry(ArgumentMatchers.any(), ArgumentMatchers.any()))
                 .thenReturn(McpToolRegistry.empty());
         when(service.runtimeSkillService.runtimeSkills(ArgumentMatchers.any())).thenReturn(null);
 
@@ -2321,8 +2325,8 @@ class RuntimeChatServiceReflectionTest {
             agenticStatic.when(AgenticServices::sequenceBuilder).thenReturn(seqBuilder);
 
             String result = (String) invoke("executeGroup",
-                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                    rootAgent, group, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    rootAgent, group, chatRequest("hello"), Map.of());
             assertThat(result).isEqualTo("seq result");
         }
     }
@@ -2341,7 +2345,7 @@ class RuntimeChatServiceReflectionTest {
         service.runtimeSkillService = mock(RuntimeSkillService.class);
         when(service.chatModelFactory.createChatModel(ArgumentMatchers.any()))
                 .thenReturn(mock(ChatModel.class));
-        when(service.mcpService.createToolRegistry(ArgumentMatchers.any()))
+        when(service.mcpService.createToolRegistry(ArgumentMatchers.any(), ArgumentMatchers.any()))
                 .thenReturn(McpToolRegistry.empty());
         when(service.runtimeSkillService.runtimeSkills(ArgumentMatchers.any())).thenReturn(null);
 
@@ -2356,8 +2360,8 @@ class RuntimeChatServiceReflectionTest {
             agenticStatic.when(AgenticServices::parallelBuilder).thenReturn(parBuilder);
 
             String result = (String) invoke("executeGroup",
-                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                    rootAgent, group, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    rootAgent, group, chatRequest("hello"), Map.of());
             assertThat(result).isEqualTo("par result");
         }
     }
@@ -2377,7 +2381,7 @@ class RuntimeChatServiceReflectionTest {
         service.runtimeSkillService = mock(RuntimeSkillService.class);
         when(service.chatModelFactory.createChatModel(ArgumentMatchers.any()))
                 .thenReturn(mock(ChatModel.class));
-        when(service.mcpService.createToolRegistry(ArgumentMatchers.any()))
+        when(service.mcpService.createToolRegistry(ArgumentMatchers.any(), ArgumentMatchers.any()))
                 .thenReturn(McpToolRegistry.empty());
         when(service.runtimeSkillService.runtimeSkills(ArgumentMatchers.any())).thenReturn(null);
 
@@ -2397,8 +2401,8 @@ class RuntimeChatServiceReflectionTest {
             agenticStatic.when(AgenticServices::supervisorBuilder).thenReturn(supBuilder);
 
             String result = (String) invoke("executeSupervisorRoutedGroup",
-                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                    rootAgent, group, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    rootAgent, group, chatRequest("hello"), Map.of());
             assertThat(result).isEqualTo("supervisor result");
         }
     }
@@ -2430,8 +2434,8 @@ class RuntimeChatServiceReflectionTest {
             agenticStatic.when(AgenticServices::supervisorBuilder).thenReturn(supBuilder);
 
             String result = (String) invoke("executeGroup",
-                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                    rootAgent, group, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    rootAgent, group, chatRequest("hello"), Map.of());
             assertThat(result).isEqualTo("supervisor via executeGroup");
         }
     }
@@ -2452,7 +2456,7 @@ class RuntimeChatServiceReflectionTest {
         service.runtimeSkillService = mock(RuntimeSkillService.class);
         when(service.chatModelFactory.createChatModel(ArgumentMatchers.any()))
                 .thenReturn(mock(ChatModel.class));
-        when(service.mcpService.createToolRegistry(ArgumentMatchers.any()))
+        when(service.mcpService.createToolRegistry(ArgumentMatchers.any(), ArgumentMatchers.any()))
                 .thenReturn(McpToolRegistry.empty());
         when(service.runtimeSkillService.runtimeSkills(ArgumentMatchers.any())).thenReturn(null);
 
@@ -2467,8 +2471,8 @@ class RuntimeChatServiceReflectionTest {
             agenticStatic.when(AgenticServices::sequenceBuilder).thenReturn(seqBuilder);
 
             String result = (String) invoke("invokeRootResponse",
-                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class },
-                    agent, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    agent, chatRequest("hello"), Map.of());
             assertThat(result).isEqualTo("group response");
         }
     }
@@ -2637,8 +2641,8 @@ class RuntimeChatServiceReflectionTest {
             agenticStatic.when(AgenticServices::supervisorBuilder).thenReturn(supBuilder);
 
             invoke("executeSupervisorRoutedGroup",
-                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                    rootAgent, group, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    rootAgent, group, chatRequest("hello"), Map.of());
         }
     }
 
@@ -2669,8 +2673,8 @@ class RuntimeChatServiceReflectionTest {
             agenticStatic.when(AgenticServices::supervisorBuilder).thenReturn(supBuilder);
 
             invoke("executeSupervisorRoutedGroup",
-                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                    rootAgent, group, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    rootAgent, group, chatRequest("hello"), Map.of());
 
             // Capture and invoke errorHandler lambda
             ArgumentCaptor<Function<ErrorContext, ErrorRecoveryResult>> errorHandlerCaptor = ArgumentCaptor
@@ -2700,7 +2704,7 @@ class RuntimeChatServiceReflectionTest {
 
         when(svc.chatModelFactory.createChatModel(ArgumentMatchers.any()))
                 .thenReturn(mock(ChatModel.class));
-        when(svc.mcpService.createToolRegistry(ArgumentMatchers.any()))
+        when(svc.mcpService.createToolRegistry(ArgumentMatchers.any(), ArgumentMatchers.any()))
                 .thenReturn(McpToolRegistry.empty());
         when(svc.runtimeSkillService.runtimeSkills(ArgumentMatchers.any())).thenReturn(null);
 
@@ -2715,8 +2719,8 @@ class RuntimeChatServiceReflectionTest {
             request.setConversation(conv);
 
             invoke(svc, "buildLocalAgent",
-                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, List.class },
-                    agent("test", "desc"), request, null);
+                    new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, List.class, Map.class },
+                    agent("test", "desc"), request, null, Map.of());
 
             // Capture and invoke userMessageProvider lambda
             ArgumentCaptor<Function<Object, String>> providerCaptor = ArgumentCaptor
@@ -2748,8 +2752,8 @@ class RuntimeChatServiceReflectionTest {
 
             @SuppressWarnings("unchecked")
             List<RuntimeAgentDelegate> delegates = (List<RuntimeAgentDelegate>) invoke("delegatesForGroup",
-                    new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                    group, chatRequest("hi"));
+                    new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    group, chatRequest("hi"), Map.of());
 
             assertThat(delegates).hasSize(1);
             // Invoke the supplier lambda — this covers lambda$delegatesForGroup$1
@@ -2785,8 +2789,8 @@ class RuntimeChatServiceReflectionTest {
 
             @SuppressWarnings("unchecked")
             List<RuntimeAgentDelegate> delegates = (List<RuntimeAgentDelegate>) invoke("delegatesForGroup",
-                    new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                    group, chatRequest("hi"));
+                    new Class[] { AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    group, chatRequest("hi"), Map.of());
 
             assertThat(delegates).hasSize(1);
             // Invoke the external agent supplier lambda — covers lambda$delegatesForGroup$1
@@ -2813,8 +2817,8 @@ class RuntimeChatServiceReflectionTest {
 
         // Both groups return empty → executeGroups returns ""
         String result = (String) invoke("executeGroups",
-                new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class },
-                agent, chatRequest("hi"));
+                new Class[] { AgentSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                agent, chatRequest("hi"), Map.of());
         assertThat(result).isEmpty();
     }
 
@@ -2842,8 +2846,8 @@ class RuntimeChatServiceReflectionTest {
             agenticStatic.when(AgenticServices::sequenceBuilder).thenReturn(seqBuilder);
 
             String result = (String) invoke("executeGroup",
-                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class },
-                    rootAgent, group, chatRequest("hello"));
+                    new Class[] { AgentSnapshotDTO.class, AgentGroupSnapshotDTO.class, ChatRequestDTO.class, Map.class },
+                    rootAgent, group, chatRequest("hello"), Map.of());
             assertThat(result).isEqualTo("seq with close");
         }
     }

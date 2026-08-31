@@ -148,17 +148,13 @@ public class RuntimeChatService {
             throw new RuntimeChatException("RUNTIME_CHAT_REQUEST_INVALID", "IllegalArgumentException",
                     "Root agent snapshot is required", Response.Status.BAD_REQUEST);
         }
-        // Capture propagated request headers (e.g. apm-principal-token) on the request
-        // thread BEFORE the async dispatch. The Vert.x RoutingContext is bound to the
-        // Vert.x request thread and is not propagated by ManagedExecutor, so if we don't
-        // snapshot it here the propagated headers would be silently lost on the async thread
-        // McpClientAuthProvider). The CDI @RequestScoped scope of McpPropagatedHeaders
-        // IS propagated by ManagedExecutor, so the snapshot stays visible downstream.
-        if (mcpPropagatedHeaders != null) {
-            mcpPropagatedHeaders.snapshot();
-        }
-        CompletableFuture<RuntimeChatResponseDTO> future = CompletableFuture.supplyAsync(() -> invoke(request),
-                runtimeExecutor());
+        // Capture propagated headers (e.g. apm-principal-token) on the request thread BEFORE
+        // async dispatch. The Vert.x RoutingContext is bound to the event-loop thread and is NOT
+        // accessible from worker/managed-executor threads. We pass the captured Map explicitly
+        // through the entire call-chain so no CDI scope propagation is required.
+        final Map<String, String> propagatedHeaders = mcpPropagatedHeaders.currentHeaders();
+        CompletableFuture<RuntimeChatResponseDTO> future = CompletableFuture.supplyAsync(
+                () -> invoke(request, propagatedHeaders), runtimeExecutor());
         try {
             return future.get(runtimeTimeoutSeconds(), TimeUnit.SECONDS);
         } catch (Exception ex) {
@@ -169,9 +165,9 @@ public class RuntimeChatService {
         }
     }
 
-    private RuntimeChatResponseDTO invoke(RuntimeChatRequestDTO request) {
+    private RuntimeChatResponseDTO invoke(RuntimeChatRequestDTO request, Map<String, String> propagatedHeaders) {
         try {
-            String message = invokeRootResponse(request.getRootAgent(), request.getChatRequest());
+            String message = invokeRootResponse(request.getRootAgent(), request.getChatRequest(), propagatedHeaders);
             RuntimeChatResponseDTO response = new RuntimeChatResponseDTO();
             response.setMessage(message);
             return response;
@@ -184,46 +180,49 @@ public class RuntimeChatService {
         }
     }
 
-    private String invokeRootResponse(AgentSnapshotDTO agent, ChatRequestDTO request) {
+    private String invokeRootResponse(AgentSnapshotDTO agent, ChatRequestDTO request,
+            Map<String, String> propagatedHeaders) {
         String groupResponse = null;
         if (Boolean.TRUE.equals(agent.getA2aEnabled()) && agent.getGroups() != null && !agent.getGroups().isEmpty()) {
-            groupResponse = executeGroups(agent, request);
+            groupResponse = executeGroups(agent, request, propagatedHeaders);
         }
         if (!isBlank(groupResponse)) {
             return groupResponse;
         }
-        try (RuntimeAgent rootAgent = rootAgent(agent, request)) {
+        try (RuntimeAgent rootAgent = rootAgent(agent, request, propagatedHeaders)) {
             return invokeSingleAgent(rootAgent, request);
         }
     }
 
-    private String executeGroups(AgentSnapshotDTO agent, ChatRequestDTO request) {
+    private String executeGroups(AgentSnapshotDTO agent, ChatRequestDTO request,
+            Map<String, String> propagatedHeaders) {
         return agent.getGroups().stream()
                 .filter(group -> group != null && group.getName() != null)
                 .sorted(Comparator.comparing(group -> safeString(group.getName()).toLowerCase()))
-                .map(group -> executeGroup(agent, group, request))
+                .map(group -> executeGroup(agent, group, request, propagatedHeaders))
                 .filter(result -> !isBlank(result))
                 .map(String::trim)
                 .findFirst()
                 .orElse("");
     }
 
-    private String executeGroup(AgentSnapshotDTO rootAgent, AgentGroupSnapshotDTO group, ChatRequestDTO request) {
+    private String executeGroup(AgentSnapshotDTO rootAgent, AgentGroupSnapshotDTO group, ChatRequestDTO request,
+            Map<String, String> propagatedHeaders) {
         String mode = !isBlank(safeString(group.getOrchestrationMode()))
                 ? safeString(group.getOrchestrationMode())
                 : "LEAD_DELEGATES";
         if ("SUPERVISOR_ROUTED".equals(mode)) {
-            return executeSupervisorRoutedGroup(rootAgent, group, request);
+            return executeSupervisorRoutedGroup(rootAgent, group, request, propagatedHeaders);
         }
         if ("SEQUENTIAL".equals(mode) || "PARALLEL".equals(mode)) {
-            List<RuntimeAgent> agents = delegatesForGroup(group, request).stream()
+            List<RuntimeAgent> agents = delegatesForGroup(group, request, propagatedHeaders).stream()
                     .map(RuntimeAgentDelegate::open)
                     .filter(Objects::nonNull)
                     .collect(Collectors.toCollection(ArrayList::new));
             if (agents.isEmpty()) {
                 return "";
             }
-            try (RuntimeAgent root = rootAgent(rootAgent, request)) {
+            try (RuntimeAgent root = rootAgent(rootAgent, request, propagatedHeaders)) {
                 agents.add(0, root);
                 return "SEQUENTIAL".equals(mode)
                         ? executeSequentialGroup(group, agents, request)
@@ -232,22 +231,22 @@ public class RuntimeChatService {
                 agents.forEach(RuntimeAgent::close);
             }
         }
-        List<RuntimeAgentDelegate> delegates = delegatesForGroup(group, request);
+        List<RuntimeAgentDelegate> delegates = delegatesForGroup(group, request, propagatedHeaders);
         if (delegates.isEmpty()) {
             return "";
         }
-        try (RuntimeAgent leadAgent = buildLocalAgent(rootAgent, request, delegates)) {
+        try (RuntimeAgent leadAgent = buildLocalAgent(rootAgent, request, delegates, propagatedHeaders)) {
             return invokeSingleAgent(leadAgent, request);
         }
     }
 
     private String executeSupervisorRoutedGroup(AgentSnapshotDTO rootAgent, AgentGroupSnapshotDTO group,
-            ChatRequestDTO request) {
+            ChatRequestDTO request, Map<String, String> propagatedHeaders) {
         List<RuntimeAgent> candidates = new ArrayList<>();
         try {
             candidates.add(lazySupervisorCandidate(runtimeName(rootAgent), runtimeDescription(rootAgent),
-                    () -> rootAgent(rootAgent, request), group, extractUserMessage(request)));
-            for (RuntimeAgentDelegate delegate : delegatesForGroup(group, request)) {
+                    () -> rootAgent(rootAgent, request, propagatedHeaders), group, extractUserMessage(request)));
+            for (RuntimeAgentDelegate delegate : delegatesForGroup(group, request, propagatedHeaders)) {
                 candidates.add(lazySupervisorCandidate(delegate.name(), delegate.description(), delegate::open, group,
                         extractUserMessage(request)));
             }
@@ -296,14 +295,15 @@ public class RuntimeChatService {
         return result != null ? result.toString() : "";
     }
 
-    private RuntimeAgent rootAgent(AgentSnapshotDTO agent, ChatRequestDTO request) {
-        return buildLocalAgent(agent, request, List.of());
+    private RuntimeAgent rootAgent(AgentSnapshotDTO agent, ChatRequestDTO request,
+            Map<String, String> propagatedHeaders) {
+        return buildLocalAgent(agent, request, List.of(), propagatedHeaders);
     }
 
     private RuntimeAgent buildLocalAgent(AgentSnapshotDTO agent, ChatRequestDTO request,
-            List<RuntimeAgentDelegate> delegateAgents) {
+            List<RuntimeAgentDelegate> delegateAgents, Map<String, String> propagatedHeaders) {
         ChatModel chatModel = chatModelFactory.createChatModel(agent);
-        McpToolRegistry toolRegistry = mcpService.createToolRegistry(agent);
+        McpToolRegistry toolRegistry = mcpService.createToolRegistry(agent, propagatedHeaders);
         Map<ToolSpecification, ToolExecutor> toolExecutors = toToolExecutors(toolRegistry, request, chatModel);
         List<RuntimeAgentDelegate> delegates = delegateAgents != null ? delegateAgents : List.of();
         toolExecutors.putAll(toDelegateToolExecutors(delegates));
@@ -349,23 +349,24 @@ public class RuntimeChatService {
                 .build();
     }
 
-    private List<RuntimeAgentDelegate> delegatesForGroup(AgentGroupSnapshotDTO group, ChatRequestDTO request) {
+    private List<RuntimeAgentDelegate> delegatesForGroup(AgentGroupSnapshotDTO group, ChatRequestDTO request,
+            Map<String, String> propagatedHeaders) {
         if (group == null) {
             return List.of();
         }
         List<RuntimeAgentDelegate> agents = new ArrayList<>();
-        collectDelegates(group, request, agents);
+        collectDelegates(group, request, agents, propagatedHeaders);
         agents.sort(Comparator.comparing(agent -> safeString(agent.name()).toLowerCase()));
         return agents;
     }
 
     private void collectDelegates(AgentGroupSnapshotDTO group, ChatRequestDTO request,
-            List<RuntimeAgentDelegate> agents) {
+            List<RuntimeAgentDelegate> agents, Map<String, String> propagatedHeaders) {
         if (group.getAgents() != null) {
             for (AgentSnapshotDTO agent : group.getAgents()) {
                 if (agent != null) {
                     agents.add(new RuntimeAgentDelegate(runtimeName(agent), runtimeDescription(agent),
-                            () -> buildLocalAgent(agent, request, List.of())));
+                            () -> buildLocalAgent(agent, request, List.of(), propagatedHeaders)));
                 }
             }
         }

@@ -66,7 +66,7 @@ class RuntimeChatServiceTest {
         service.objectMapper = new ObjectMapper();
         service.runtimeTimeout = 120L;
 
-        when(mcpService.createToolRegistry(any())).thenReturn(McpToolRegistry.empty());
+        when(mcpService.createToolRegistry(any(), any())).thenReturn(McpToolRegistry.empty());
     }
 
     @Test
@@ -97,7 +97,7 @@ class RuntimeChatServiceTest {
 
         service.chat(runtimeRequest(rootAgent(), "ping"));
 
-        verify(mcpPropagatedHeaders).snapshot();
+        verify(mcpPropagatedHeaders).currentHeaders();
     }
 
     @Test
@@ -230,7 +230,7 @@ class RuntimeChatServiceTest {
                 .build();
         McpTool alwaysAskTool = new McpTool("server", "http://mcp", spec, client,
                 null, "ALWAYS_ASK");
-        when(mcpService.createToolRegistry(any())).thenReturn(new McpToolRegistry(List.of(alwaysAskTool)));
+        when(mcpService.createToolRegistry(any(), any())).thenReturn(new McpToolRegistry(List.of(alwaysAskTool)));
         when(chatModelFactory.createChatModel(any())).thenReturn(new StaticChatModel("pong"));
 
         var response = service.chat(runtimeRequest(rootAgent(), "hello"));
@@ -251,7 +251,7 @@ class RuntimeChatServiceTest {
                 .build();
         McpTool alwaysAskTool = new McpTool("server", "http://mcp", spec, client,
                 "ALWAYS_ASK", null);
-        when(mcpService.createToolRegistry(any())).thenReturn(new McpToolRegistry(List.of(alwaysAskTool)));
+        when(mcpService.createToolRegistry(any(), any())).thenReturn(new McpToolRegistry(List.of(alwaysAskTool)));
 
         ConfirmationDetectingChatModel model = new ConfirmationDetectingChatModel("NO",
                 AiMessage.from(ToolExecutionRequest.builder()
@@ -279,7 +279,7 @@ class RuntimeChatServiceTest {
                 .build();
         McpTool alwaysAskTool = new McpTool("server", "http://mcp", spec, client,
                 "ALWAYS_ASK", null);
-        when(mcpService.createToolRegistry(any())).thenReturn(new McpToolRegistry(List.of(alwaysAskTool)));
+        when(mcpService.createToolRegistry(any(), any())).thenReturn(new McpToolRegistry(List.of(alwaysAskTool)));
 
         ToolExecutionResult toolResult = mock(ToolExecutionResult.class);
         when(toolResult.resultText()).thenReturn("deleted successfully");
