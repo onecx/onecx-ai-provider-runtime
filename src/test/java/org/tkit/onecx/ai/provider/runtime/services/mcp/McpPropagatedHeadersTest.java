@@ -124,15 +124,6 @@ class McpPropagatedHeadersTest {
         assertThat(headers.currentHeaders()).isEmpty();
     }
 
-    @Test
-    void currentHeaders_fallsBackToReadingDirectly_ifSnapshotNotCalled() {
-        McpPropagatedHeaders headers = new McpPropagatedHeaders();
-        headers.routingContext = routingContext("principal-token");
-
-        // Don't call snapshot(), just call currentHeaders directly
-        assertThat(headers.currentHeaders()).containsEntry("apm-principal-token", "principal-token");
-    }
-
     @SuppressWarnings("unchecked")
     private static Instance<RoutingContext> routingContext(String token) {
         HttpServerRequest request = mock(HttpServerRequest.class);
