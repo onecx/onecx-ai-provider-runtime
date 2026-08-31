@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Method;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.tkit.onecx.ai.provider.runtime.common.RuntimeChatException;
 import org.tkit.onecx.ai.provider.runtime.config.DispatchConfig;
 import org.tkit.onecx.ai.provider.runtime.services.external.ExternalAgentDiscoveryService;
+import org.tkit.onecx.ai.provider.runtime.services.mcp.McpPropagatedHeaders;
 import org.tkit.onecx.ai.provider.runtime.services.mcp.McpService;
 import org.tkit.onecx.ai.provider.runtime.services.mcp.McpTool;
 import org.tkit.onecx.ai.provider.runtime.services.mcp.McpToolRegistry;
@@ -45,17 +47,20 @@ class RuntimeChatServiceTest {
     RuntimeChatService service;
     ChatModelFactory chatModelFactory;
     McpService mcpService;
+    McpPropagatedHeaders mcpPropagatedHeaders;
 
     @BeforeEach
     void setUp() {
         chatModelFactory = mock(ChatModelFactory.class);
         mcpService = mock(McpService.class);
+        mcpPropagatedHeaders = mock(McpPropagatedHeaders.class);
 
         service = new RuntimeChatService();
         service.chatModelFactory = chatModelFactory;
         service.scaffoldPromptComposer = new ScaffoldPromptComposer();
         service.runtimeSkillService = new RuntimeSkillService();
         service.mcpService = mcpService;
+        service.mcpPropagatedHeaders = mcpPropagatedHeaders;
         service.externalAgentDiscoveryService = mock(ExternalAgentDiscoveryService.class);
         service.dispatchConfig = dispatchConfig();
         service.objectMapper = new ObjectMapper();
@@ -84,6 +89,15 @@ class RuntimeChatServiceTest {
         var response = service.chat(runtimeRequest(rootAgent(), "ping"));
 
         assertThat(response.getMessage()).isEqualTo("pong");
+    }
+
+    @Test
+    void chat_capturesAndCachesPropagatedHeaders() {
+        when(chatModelFactory.createChatModel(any())).thenReturn(new StaticChatModel("pong"));
+
+        service.chat(runtimeRequest(rootAgent(), "ping"));
+
+        verify(mcpPropagatedHeaders).snapshot();
     }
 
     @Test
