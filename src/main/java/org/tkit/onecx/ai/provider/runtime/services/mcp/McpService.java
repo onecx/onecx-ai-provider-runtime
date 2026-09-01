@@ -2,6 +2,7 @@ package org.tkit.onecx.ai.provider.runtime.services.mcp;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -255,7 +256,7 @@ public class McpService {
         if ((first == null || first.isEmpty()) && (second == null || second.isEmpty())) {
             return Map.of();
         }
-        java.util.LinkedHashMap<String, String> headers = new java.util.LinkedHashMap<>();
+        LinkedHashMap<String, String> headers = new LinkedHashMap<>();
         if (first != null) {
             headers.putAll(first);
         }

@@ -86,6 +86,24 @@ class McpServiceTest {
     }
 
     @Test
+    void createToolRegistry_normalizesNullPropagatedHeadersToEmptyMap() {
+        var service = new TestableMcpService();
+        service.dispatchConfig = dispatchConfig();
+
+        McpClient client = mock(McpClient.class);
+        when(client.listTools()).thenReturn(List.of(toolSpec("tool-a")));
+        service.registerClient("http://ok", client);
+
+        var agent = new AgentSnapshotDTO();
+        agent.setTools(List.of(tool("http://ok", null, "MCP")));
+
+        var registry = service.createToolRegistry(agent, null);
+
+        assertThat(registry.tools()).hasSize(1);
+        assertThat(service.lastPropagatedHeaders).isNotNull().isEmpty();
+    }
+
+    @Test
     void createToolRegistry_returnsEmpty_whenClientCreationThrows() {
         var service = new TestableMcpService();
         service.dispatchConfig = dispatchConfig();
@@ -246,6 +264,34 @@ class McpServiceTest {
             clientStatic.when(DefaultMcpClient::builder).thenReturn(clientBuilder);
 
             assertThat(service.createMcpClient(tool, new HashMap<>())).isSameAs(client);
+        }
+    }
+
+    @Test
+    void createMcpClient_usesEmptyHeadersWhenPropagatedHeadersAreNull() {
+        var service = serviceWithConfig();
+        var tool = tool("http://example.org", "Bearer token", "MCP");
+
+        StreamableHttpMcpTransport.Builder transportBuilder = mock(StreamableHttpMcpTransport.Builder.class);
+        StreamableHttpMcpTransport transport = mock(StreamableHttpMcpTransport.class);
+        DefaultMcpClient.Builder clientBuilder = mock(DefaultMcpClient.Builder.class);
+        DefaultMcpClient client = mock(DefaultMcpClient.class);
+
+        when(transportBuilder.url("http://example.org")).thenReturn(transportBuilder);
+        when(transportBuilder.timeout(Duration.ofSeconds(1))).thenReturn(transportBuilder);
+        when(transportBuilder.logRequests(false)).thenReturn(transportBuilder);
+        when(transportBuilder.logResponses(false)).thenReturn(transportBuilder);
+        when(transportBuilder.customHeaders(Map.of("Authorization", "Bearer token"))).thenReturn(transportBuilder);
+        when(transportBuilder.build()).thenReturn(transport);
+        when(clientBuilder.transport(transport)).thenReturn(clientBuilder);
+        when(clientBuilder.build()).thenReturn(client);
+
+        try (MockedStatic<StreamableHttpMcpTransport> transportStatic = mockStatic(StreamableHttpMcpTransport.class);
+                MockedStatic<DefaultMcpClient> clientStatic = mockStatic(DefaultMcpClient.class)) {
+            transportStatic.when(StreamableHttpMcpTransport::builder).thenReturn(transportBuilder);
+            clientStatic.when(DefaultMcpClient::builder).thenReturn(clientBuilder);
+
+            assertThat(service.createMcpClient(tool, null)).isSameAs(client);
         }
     }
 
@@ -903,6 +949,45 @@ class McpServiceTest {
         }
     }
 
+    @Test
+    void mergeHeaders_returnsEmptyMapWhenBothMapsAreNullOrEmpty() throws Exception {
+        var service = serviceWithConfig();
+
+        assertThat(invokeMergeHeaders(service, null, null)).isEmpty();
+        assertThat(invokeMergeHeaders(service, Map.of(), null)).isEmpty();
+        assertThat(invokeMergeHeaders(service, null, Map.of())).isEmpty();
+    }
+
+    @Test
+    void mergeHeaders_returnsFirstWhenSecondIsNullOrEmpty() throws Exception {
+        var service = serviceWithConfig();
+        Map<String, String> first = Map.of("apm-principal-token", "token");
+
+        assertThat(invokeMergeHeaders(service, first, null)).containsExactlyEntriesOf(first);
+        assertThat(invokeMergeHeaders(service, first, Map.of())).containsExactlyEntriesOf(first);
+    }
+
+    @Test
+    void mergeHeaders_returnsSecondWhenFirstIsNullOrEmpty() throws Exception {
+        var service = serviceWithConfig();
+        Map<String, String> second = Map.of("Authorization", "Bearer token");
+
+        assertThat(invokeMergeHeaders(service, null, second)).containsExactlyEntriesOf(second);
+        assertThat(invokeMergeHeaders(service, Map.of(), second)).containsExactlyEntriesOf(second);
+    }
+
+    @Test
+    void mergeHeaders_prefersSecondMapOnKeyCollision() throws Exception {
+        var service = serviceWithConfig();
+        Map<String, String> first = Map.of("Authorization", "Bearer old", "x", "1");
+        Map<String, String> second = Map.of("Authorization", "Bearer new", "y", "2");
+
+        assertThat(invokeMergeHeaders(service, first, second))
+                .containsEntry("Authorization", "Bearer new")
+                .containsEntry("x", "1")
+                .containsEntry("y", "2");
+    }
+
     private DiscoveredToolAnnotationsDTO invokeToAnnotations(McpService service, Map<String, Object> metadata)
             throws Exception {
         Method method = McpService.class.getDeclaredMethod("toAnnotations", Map.class);
@@ -914,6 +999,14 @@ class McpServiceTest {
         Method method = McpService.class.getDeclaredMethod("boolMeta", Map.class, String.class);
         method.setAccessible(true);
         return (boolean) method.invoke(service, metadata, key);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, String> invokeMergeHeaders(McpService service, Map<String, String> first, Map<String, String> second)
+            throws Exception {
+        Method method = McpService.class.getDeclaredMethod("mergeHeaders", Map.class, Map.class);
+        method.setAccessible(true);
+        return (Map<String, String>) method.invoke(service, first, second);
     }
 
     private static McpService serviceWithConfig() {
@@ -980,6 +1073,7 @@ class McpServiceTest {
 
         private final Map<String, McpClient> clients = new HashMap<>();
         private final Map<String, RuntimeException> creationErrors = new HashMap<>();
+        private Map<String, String> lastPropagatedHeaders;
 
         void registerClient(String url, McpClient client) {
             clients.put(url, client);
@@ -991,6 +1085,7 @@ class McpServiceTest {
 
         @Override
         protected McpClient createMcpClient(ToolSnapshotDTO tool, Map<String, String> propagatedHeaders) {
+            lastPropagatedHeaders = propagatedHeaders;
             RuntimeException ex = creationErrors.get(tool.getUrl());
             if (ex != null) {
                 throw ex;
