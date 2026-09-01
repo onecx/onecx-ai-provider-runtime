@@ -396,6 +396,35 @@ class McpServiceTest {
     }
 
     @Test
+    void createMcpClient_appliesPropagatedHeadersWhenNoApiKeyOrOAuthConfigured() {
+        var service = serviceWithConfig();
+        var tool = tool("http://example.org", null, "MCP");
+        Map<String, String> propagatedHeaders = Map.of("apm-principal-token", "principal-token");
+
+        StreamableHttpMcpTransport.Builder transportBuilder = mock(StreamableHttpMcpTransport.Builder.class);
+        StreamableHttpMcpTransport transport = mock(StreamableHttpMcpTransport.class);
+        DefaultMcpClient.Builder clientBuilder = mock(DefaultMcpClient.Builder.class);
+        DefaultMcpClient client = mock(DefaultMcpClient.class);
+
+        when(transportBuilder.url("http://example.org")).thenReturn(transportBuilder);
+        when(transportBuilder.timeout(Duration.ofSeconds(1))).thenReturn(transportBuilder);
+        when(transportBuilder.logRequests(false)).thenReturn(transportBuilder);
+        when(transportBuilder.logResponses(false)).thenReturn(transportBuilder);
+        when(transportBuilder.customHeaders(propagatedHeaders)).thenReturn(transportBuilder);
+        when(transportBuilder.build()).thenReturn(transport);
+        when(clientBuilder.transport(transport)).thenReturn(clientBuilder);
+        when(clientBuilder.build()).thenReturn(client);
+
+        try (MockedStatic<StreamableHttpMcpTransport> transportStatic = mockStatic(StreamableHttpMcpTransport.class);
+                MockedStatic<DefaultMcpClient> clientStatic = mockStatic(DefaultMcpClient.class)) {
+            transportStatic.when(StreamableHttpMcpTransport::builder).thenReturn(transportBuilder);
+            clientStatic.when(DefaultMcpClient::builder).thenReturn(clientBuilder);
+
+            assertThat(service.createMcpClient(tool, propagatedHeaders)).isSameAs(client);
+        }
+    }
+
+    @Test
     void createMcpClient_propagatesApmPrincipalTokenWithOAuthAuthorizationHeader() {
         var service = serviceWithConfig();
         var propagatedHeaders = Map.of("apm-principal-token", "principal-token");
