@@ -1,0 +1,99 @@
+= Runtime contract artifact
+
+The `onecx-ai-provider-runtime` release publishes the runtime OpenAPI contract
+(`src/main/openapi/openapi-runtime.yaml`) as a **versioned, immutable Maven artifact** in addition
+to the primary JAR. Downstream modules can generate compatible clients from a fixed release
+instead of reading a moving branch. The existing typed dispatch interface and provider-health
+behavior are unchanged; the contract is an additional classified artifact published alongside the
+binary.
+
+== Published artifact coordinates
+
+The contract artifact is attached to the release with the exact coordinates below, where
+`<version>` is the released runtime version (bound to `${project.version}` at build time):
+
+`org.tkit.onecx:onecx-ai-provider-runtime:<version>:yaml:runtime-contract`
+
+[cols="2",options="header",]
+|===
+| Coordinate | Value
+
+| GroupId
+| `org.tkit.onecx`
+
+| ArtifactId
+| `onecx-ai-provider-runtime`
+
+| Version
+| the released version (`${project.version}`; immutable once published)
+
+| Type
+| `yaml`
+
+| Classifier
+| `runtime-contract`
+|===
+
+In the repository layout the file sits next to the primary artifact as
+`onecx-ai-provider-runtime-<version>-runtime-contract.yaml`.
+
+== Immutability and version identity
+
+* Each release version publishes **one** immutable contract artifact tied to that runtime version.
+  The contract is bound to the release **version**, not to a branch.
+* Once a version is published, its `runtime-contract.yaml` is immutable: the same version always
+  resolves to the same contract.
+* The artifact is attached during the Maven `package` phase (via
+  `build-helper-maven-plugin:attach-artifact`), so it is included in the release publish together
+  with the primary artifact, under the same immutable version.
+* The primary JAR is unchanged; the contract is an additional classified artifact published
+  alongside it.
+* Consumers **must use a released version** for client generation or contract checks — never a
+  branch source file. Branch contents are mutable and carry no version guarantee.
+
+== Consumer retrieval
+
+Consumers resolve the contract artifact by Maven coordinates without fetching source from a branch.
+For a one-off download:
+
+[source,bash]
+----
+mvn -B -ntp dependency:get \
+  -DgroupId=org.tkit.onecx \
+  -DartifactId=onecx-ai-provider-runtime \
+  -Dversion=<released-version> \
+  -Dclassifier=runtime-contract \
+  -Dpackaging=yaml
+----
+
+Or declare it as a dependency:
+
+[source,xml]
+----
+<dependency>
+    <groupId>org.tkit.onecx</groupId>
+    <artifactId>onecx-ai-provider-runtime</artifactId>
+    <version>released-version</version>
+    <classifier>runtime-contract</classifier>
+    <type>yaml</type>
+</dependency>
+----
+
+Both the classifier and the type are required — without them the coordinate resolves to the
+primary JAR rather than the contract.
+
+== Compatibility scope
+
+The contract pins the internal text-dispatch and provider-health API. Text-dispatch and
+provider-health contract compatibility is validated by Quarkus/JUnit tests in this repository, so a
+signature or type drift between the published contract and the implementation fails the build:
+
+* `RuntimeRestControllerTest` — compatibility tests for the typed text-dispatch and
+  provider-health request/response shapes (the `compatibility_`-prefixed tests pin the shapes
+  existing clients rely on).
+* `ProviderHealthServiceTest` — compatibility tests pinning the healthy/unhealthy
+  provider-health semantics (`compatibility_returnsHealthyStatusForAvailableProvider`,
+  `compatibility_returnsUnhealthyStatusForFailingProvider`).
+* `OpenApiContractPublicationTest` — validates the published OpenAPI contract file is present,
+  non-empty, and complete (`openapi`, `info`, text-dispatch and provider-health operations, and the
+  typed dispatch schemas), and that the build attaches it with the exact coordinates above.
