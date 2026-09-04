@@ -7,6 +7,7 @@ import jakarta.enterprise.context.ContextNotActiveException;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 
+import io.vertx.core.http.HttpServerRequest;
 import io.vertx.ext.web.RoutingContext;
 
 /**
@@ -23,6 +24,7 @@ import io.vertx.ext.web.RoutingContext;
 public class McpPropagatedHeaders {
 
     static final String APM_PRINCIPAL_TOKEN = "apm-principal-token";
+    static final String USER_AUTHORIZATION = "UserAuthorization";
 
     @Inject
     Instance<RoutingContext> routingContext;
@@ -36,11 +38,22 @@ public class McpPropagatedHeaders {
             if (routingContext == null || routingContext.isUnsatisfied()) {
                 return Map.of();
             }
-            String token = routingContext.get().request().getHeader(APM_PRINCIPAL_TOKEN);
-            if (isBlank(token)) {
+            HttpServerRequest request = routingContext.get().request();
+            java.util.LinkedHashMap<String, String> propagated = new java.util.LinkedHashMap<>();
+            String principalToken = request.getHeader(APM_PRINCIPAL_TOKEN);
+            if (!isBlank(principalToken)) {
+                propagated.put(APM_PRINCIPAL_TOKEN, principalToken);
+            }
+            String userAuthorization = request.getHeader(USER_AUTHORIZATION);
+            if (!isBlank(userAuthorization)) {
+                propagated.put(USER_AUTHORIZATION, userAuthorization);
+            }
+
+            if (propagated.isEmpty()) {
                 return Map.of();
             }
-            return Map.of(APM_PRINCIPAL_TOKEN, token);
+
+            return Map.copyOf(propagated);
         } catch (ContextNotActiveException | IllegalStateException ex) {
             return Map.of();
         }

@@ -12,6 +12,7 @@ import jakarta.enterprise.inject.Instance;
 import org.junit.jupiter.api.Test;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.vertx.core.MultiMap;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.ext.web.RoutingContext;
 
@@ -24,6 +25,16 @@ class McpPropagatedHeadersTest {
         headers.routingContext = routingContext("principal-token");
 
         assertThat(headers.currentHeaders()).containsEntry("apm-principal-token", "principal-token");
+    }
+
+    @Test
+    void currentHeaders_returnsBothConfiguredHeadersFromCurrentRequest() {
+        McpPropagatedHeaders headers = new McpPropagatedHeaders();
+        headers.routingContext = routingContext("principal-token", "Bearer user-token");
+
+        assertThat(headers.currentHeaders())
+                .containsEntry("apm-principal-token", "principal-token")
+                .containsEntry("UserAuthorization", "Bearer user-token");
     }
 
     @Test
@@ -131,8 +142,22 @@ class McpPropagatedHeadersTest {
 
     @SuppressWarnings("unchecked")
     private static Instance<RoutingContext> routingContext(String token) {
+        return routingContext(token, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Instance<RoutingContext> routingContext(String token, String userAuthorization) {
         HttpServerRequest request = mock(HttpServerRequest.class);
         when(request.getHeader("apm-principal-token")).thenReturn(token);
+        when(request.getHeader("UserAuthorization")).thenReturn(userAuthorization);
+        MultiMap allHeaders = MultiMap.caseInsensitiveMultiMap();
+        if (token != null) {
+            allHeaders.set("apm-principal-token", token);
+        }
+        if (userAuthorization != null) {
+            allHeaders.set("UserAuthorization", userAuthorization);
+        }
+        when(request.headers()).thenReturn(allHeaders);
         RoutingContext context = mock(RoutingContext.class);
         when(context.request()).thenReturn(request);
         Instance<RoutingContext> instance = mock(Instance.class);
