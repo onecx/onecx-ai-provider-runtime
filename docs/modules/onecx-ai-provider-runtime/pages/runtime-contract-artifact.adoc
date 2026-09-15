@@ -1,0 +1,127 @@
+= Runtime contract artifact
+
+The `onecx-ai-provider-runtime` release delivers the runtime OpenAPI contract
+(`src/main/openapi/openapi-runtime.yaml`) **inside the release image** and, alongside it, as a
+**versioned, immutable release asset**. Downstream modules can generate compatible clients from a
+fixed image or release tag instead of reading a moving branch. The existing typed dispatch interface
+and provider-health behavior are unchanged; the contract is an additional artifact delivered with
+every release.
+
+The product ships as a containerized application (its release channel is the image and chart), so the
+contract is delivered through the release pipeline — bundled into the image and attached to the
+release — rather than through a Maven repository. It is versioned by the **same tag** that versions
+the image: the tag that builds `ghcr.io/onecx/onecx-ai-provider-runtime:<tag>` is the tag that ships
+the contract, whether read out of the image or downloaded from the release.
+
+== Where the contract lives in a release
+
+For a release tagged `<tag>` (e.g. `v1.2.3`), the contract is delivered two ways:
+
+* **Inside the image** — both the JVM and native release images `COPY` the contract verbatim to
+  `/etc/onecx/openapi-runtime.yaml`. It ships with the image and is versioned by the image tag.
+* **As a release asset** — the contract is attached to the GitHub Release for that tag as:
+
+  `onecx-ai-provider-runtime-<tag>-runtime-contract.yaml`
+
+[cols="2",options="header",]
+|===
+| Attribute | Value
+
+| Source file
+| `src/main/openapi/openapi-runtime.yaml`
+
+| In-image path
+| `/etc/onecx/openapi-runtime.yaml` (present in both the JVM and native images)
+
+| Release asset name
+| `onecx-ai-provider-runtime-<tag>-runtime-contract.yaml`
+
+| Version identity
+| the release **tag** (identical to the image tag; immutable once released)
+
+| Delivered alongside
+| the Docker image (`ghcr.io/onecx/...`) and the Helm chart
+
+| Carried by
+| the release image (both variants) and the GitHub Release for the tag (uploaded by the `contract`
+  job in `.github/workflows/build-release.yml`)
+|===
+
+The file also carries its own self-describing contract version in `info.version`, so the artifact
+identifies the API it pins independently of the runtime version.
+
+== Immutability and version identity
+
+* Each release carries the contract in **both** its image and the release asset, bound to that
+  release **tag** rather than to a branch.
+* Once a tag is released, its image and its `…-runtime-contract.yaml` are immutable: the same tag
+  always resolves to the same contract, exactly like the image tag.
+* The contract is copied verbatim from `src/main/openapi/openapi-runtime.yaml` into the image and
+  uploaded to the release — no transformation, so both forms are byte-identical to the committed
+  spec.
+* Consumers **must use a released tag** for client generation or contract checks — never a branch
+  source file. Branch contents are mutable and carry no version guarantee.
+
+== Consumer retrieval
+
+Consumers pin the contract to a released tag and retrieve it from either of its forms, without
+pulling source from a branch.
+
+=== From the release asset
+
+The preferred approach for client generation and contract checks, since it needs no running
+service. Fetch the tagged asset by tag:
+
+[source,bash]
+----
+gh release download <tag> \
+  --repo onecx/onecx-ai-provider-runtime \
+  --pattern 'onecx-ai-provider-runtime-*-runtime-contract.yaml'
+----
+
+Or download the asset directly by URL:
+
+[source,bash]
+----
+curl -fL \
+  "https://github.com/onecx/onecx-ai-provider-runtime/releases/download/<tag>/onecx-ai-provider-runtime-<tag>-runtime-contract.yaml"
+----
+
+The tag in the URL and the asset name must match the same release; the `-runtime-contract.yaml`
+suffix distinguishes the contract from any other release assets.
+
+=== From the release image
+
+More useful for debugging a running deployment. Both the JVM and native images carry the contract
+verbatim at `/etc/onecx/openapi-runtime.yaml`; read it straight out of the pinned image:
+
+[source,bash]
+----
+kubectl cp <namespace>/<pod>:/etc/onecx/openapi-runtime.yaml contract.yaml
+----
+
+Or copy it from the image without a running pod:
+
+[source,bash]
+----
+docker run --rm --entrypoint cat ghcr.io/onecx/onecx-ai-provider-runtime:<tag> \
+  /etc/onecx/openapi-runtime.yaml > contract.yaml
+----
+
+== Compatibility scope
+
+The contract pins the internal text-dispatch and provider-health API. Text-dispatch and
+provider-health contract compatibility is validated by Quarkus/JUnit tests in this repository, so a
+signature or type drift between the published contract and the implementation fails the build:
+
+* `RuntimeRestControllerTest` — compatibility tests for the typed text-dispatch and
+  provider-health request/response shapes (the `compatibility_`-prefixed tests pin the shapes
+  existing clients rely on).
+* `ProviderHealthServiceTest` — compatibility tests pinning the healthy/unhealthy
+  provider-health semantics (`compatibility_returnsHealthyStatusForAvailableProvider`,
+  `compatibility_returnsUnhealthyStatusForFailingProvider`).
+* `OpenApiContractPublicationTest` — validates the runtime OpenAPI contract file is present,
+  non-empty, and complete (`openapi`, `info`, text-dispatch and provider-health operations, and the
+  typed dispatch schemas), that the release Dockerfiles bundle it into the image at
+  `/etc/onecx/openapi-runtime.yaml`, and that the release workflow uploads it as a tagged release
+  asset.

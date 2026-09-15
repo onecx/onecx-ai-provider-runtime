@@ -1,3 +1,6 @@
 FROM ghcr.io/onecx/docker-quarkus-native:1.5.0
 
 COPY --chown=1001:root target/*-runner /work/application
+# Bundle the versioned runtime OpenAPI contract into the image so it ships with the same
+# immutable image tag; consumers read it out with docker cp / kubectl cp.
+COPY --chmod=644 src/main/openapi/openapi-runtime.yaml /etc/onecx/openapi-runtime.yaml

@@ -17,6 +17,7 @@ import org.tkit.onecx.ai.provider.runtime.test.AbstractTest;
 import dev.langchain4j.model.chat.ChatModel;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderHealthRequestDTO;
+import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderHealthStatusDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderHealthStatusDTO.StatusEnum;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderSnapshotDTO;
 import io.quarkus.test.junit.QuarkusTest;
@@ -61,6 +62,32 @@ class ProviderHealthServiceTest extends AbstractTest {
 
         assertThat(service.getProviderHealthStatus(request(null)).getStatus()).isEqualTo(StatusEnum.UNHEALTHY);
         assertThat(service.getProviderHealthStatus(null).getStatus()).isEqualTo(StatusEnum.UNHEALTHY);
+    }
+
+    // ---- contract compatibility: pin the provider-health semantics exposed to REST clients ----
+
+    @Test
+    void compatibility_returnsHealthyStatusForAvailableProvider() {
+        // A matching, configured (available) adapter must keep producing the healthy status.
+        service.providerAdapters = instance(List.of(new FakeProviderAdapter("OLLAMA", true)));
+
+        ProviderHealthStatusDTO status = service
+                .getProviderHealthStatus(request(provider("OLLAMA", "http://localhost:11434", null)));
+
+        assertThat(status).isNotNull();
+        assertThat(status.getStatus()).isEqualTo(StatusEnum.HEALTHY);
+    }
+
+    @Test
+    void compatibility_returnsUnhealthyStatusForFailingProvider() {
+        // A matching but failing (unconfigured) adapter must keep producing the unhealthy status.
+        service.providerAdapters = instance(List.of(new FakeProviderAdapter("OLLAMA", false)));
+
+        ProviderHealthStatusDTO status = service
+                .getProviderHealthStatus(request(provider("OLLAMA", "http://localhost:11434", null)));
+
+        assertThat(status).isNotNull();
+        assertThat(status.getStatus()).isEqualTo(StatusEnum.UNHEALTHY);
     }
 
     private ProviderHealthRequestDTO request(ProviderSnapshotDTO provider) {

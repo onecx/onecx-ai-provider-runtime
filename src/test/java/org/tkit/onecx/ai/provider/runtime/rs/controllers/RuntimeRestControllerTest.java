@@ -18,6 +18,8 @@ import org.tkit.onecx.ai.provider.runtime.services.provider.ProviderHealthServic
 import org.tkit.onecx.ai.provider.runtime.test.AbstractTest;
 import org.tkit.quarkus.security.test.GenerateKeycloakClient;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.*;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderHealthStatusDTO.StatusEnum;
 import io.quarkus.test.InjectMock;
@@ -114,6 +116,82 @@ class RuntimeRestControllerTest extends AbstractTest {
             ProblemDetailResponseDTO entity = response.getEntity();
             assertThat(entity.getErrorCode()).isEqualTo("MCP_DISCOVERY_FAILED");
             assertThat(entity.getDetail()).isEqualTo("discovery failed");
+        }
+    }
+
+    // ---- contract compatibility: pin the typed text-dispatch and provider-health shapes ----
+
+    @Test
+    void compatibility_textDispatch_requestAndResponseShapesRemainValid() throws Exception {
+        // A valid typed text dispatch request built from the current DTO fields.
+        RuntimeChatRequestDTO request = chatRequest();
+        RuntimeChatResponseDTO serviceResponse = new RuntimeChatResponseDTO();
+        serviceResponse.setMessage("dispatched ok");
+
+        when(runtimeChatService.chat(request)).thenReturn(serviceResponse);
+
+        try (Response response = controller.chat(request)) {
+            // Existing clients see the HTTP success status the controller currently returns.
+            assertThat(response.getStatus()).isEqualTo(Response.Status.OK.getStatusCode());
+
+            RuntimeChatResponseDTO body = (RuntimeChatResponseDTO) response.getEntity();
+            assertThat(body).isNotNull();
+            // The typed response field expected by existing clients remains present and correct.
+            assertThat(body.getMessage()).isEqualTo("dispatched ok");
+
+            // The serialized response JSON still carries the existing typed response field.
+            String json = new ObjectMapper().writeValueAsString(body);
+            assertThat(json).contains("message").contains("dispatched ok");
+        }
+
+        verify(runtimeChatService).chat(request);
+    }
+
+    @Test
+    void compatibility_textDispatch_requestAndResponseSchemaFieldsRemainTyped() {
+        RuntimeChatRequestDTO request = chatRequest();
+
+        // Request schema fields remain present and typed as the contract declares.
+        assertThat(request.getChatRequest()).isNotNull();
+        assertThat(request.getChatRequest().getChatMessage()).isNotNull();
+        assertThat(request.getChatRequest().getChatMessage().getType()).isEqualTo("USER");
+        assertThat(request.getChatRequest().getChatMessage().getMessage()).isEqualTo("hello");
+        assertThat(request.getRootAgent()).isNotNull();
+        assertThat(request.getRootAgent().getName()).isEqualTo("agent");
+
+        // Response schema: a typed string message survives the controller round-trip.
+        RuntimeChatResponseDTO serviceResponse = new RuntimeChatResponseDTO();
+        serviceResponse.setMessage("dispatched ok");
+        when(runtimeChatService.chat(request)).thenReturn(serviceResponse);
+
+        try (Response response = controller.chat(request)) {
+            assertThat(response.getStatus()).isEqualTo(Response.Status.OK.getStatusCode());
+            RuntimeChatResponseDTO body = (RuntimeChatResponseDTO) response.getEntity();
+            assertThat(body).isNotNull();
+            assertThat(body.getMessage()).isInstanceOf(String.class);
+            assertThat(body.getMessage()).isEqualTo("dispatched ok");
+        }
+    }
+
+    @Test
+    void compatibility_providerHealth_requestAndResponseSchemaFieldsRemainTyped() {
+        ProviderHealthRequestDTO request = providerHealthRequest();
+
+        // Request schema fields remain present and typed as the contract declares.
+        assertThat(request.getProvider()).isNotNull();
+        assertThat(request.getProvider().getType()).isEqualTo("OPENAI");
+
+        // Response schema: a typed status enum survives the controller round-trip.
+        ProviderHealthStatusDTO serviceResponse = new ProviderHealthStatusDTO();
+        serviceResponse.setStatus(StatusEnum.HEALTHY);
+        when(providerHealthService.getProviderHealthStatus(request)).thenReturn(serviceResponse);
+
+        try (Response response = controller.getProviderHealthStatus(request)) {
+            assertThat(response.getStatus()).isEqualTo(Response.Status.OK.getStatusCode());
+            ProviderHealthStatusDTO body = (ProviderHealthStatusDTO) response.getEntity();
+            assertThat(body).isNotNull();
+            assertThat(body.getStatus()).isInstanceOf(StatusEnum.class);
+            assertThat(body.getStatus()).isEqualTo(StatusEnum.HEALTHY);
         }
     }
 

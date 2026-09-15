@@ -10,3 +10,18 @@ jobs:
     with:
       native: true
       helmEventTargetRepository: onecx/onecx-ai-provider
+  contract:
+    name: Publish runtime contract artifact
+    runs-on: ubuntu-latest
+    needs: [release]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Stage versioned contract artifact
+        run: |
+          cp src/main/openapi/openapi-runtime.yaml \
+             "onecx-ai-provider-runtime-${GITHUB_REF_NAME}-runtime-contract.yaml"
+      - name: Upload to the release
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: false
+          files: onecx-ai-provider-runtime-${GITHUB_REF_NAME}-runtime-contract.yaml
