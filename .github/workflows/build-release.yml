@@ -24,4 +24,4 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: false
-          files: onecx-ai-provider-runtime-${GITHUB_REF_NAME}-runtime-contract.yaml
+          files: onecx-ai-provider-runtime-${{ github.ref_name }}-runtime-contract.yaml
