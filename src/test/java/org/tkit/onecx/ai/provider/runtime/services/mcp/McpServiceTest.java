@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -897,6 +898,56 @@ class McpServiceTest {
                 List.of(toolSpec("tool-a"), toolSpec("tool-b")));
 
         assertThat(result).extracting(ToolSpecification::name).containsExactly("tool-a");
+    }
+
+    @Test
+    void filterByRules_withManyMissingTools_keepsOnlyAllowed() throws Exception {
+        var service = serviceWithConfig(true, false);
+
+        var tool = tool("http://ok", null, "MCP");
+        tool.setToolRules(List.of(rule("tool-0", ToolRuleSnapshotDTO.AllowedEnum.ALLOW)));
+
+        Method method = McpService.class.getDeclaredMethod("filterByRules", ToolSnapshotDTO.class, List.class);
+        method.setAccessible(true);
+        List<ToolSpecification> specs = IntStream.range(0, 20)
+                .mapToObj(i -> toolSpec("tool-" + i)).toList();
+        @SuppressWarnings("unchecked")
+        List<ToolSpecification> result = (List<ToolSpecification>) method.invoke(service, tool, specs);
+
+        assertThat(result).hasSize(1).extracting(ToolSpecification::name).containsExactly("tool-0");
+    }
+
+    @Test
+    void filterByRules_withNullAllowedRule_treatsAsDenied() throws Exception {
+        var service = serviceWithConfig(true, false);
+
+        var tool = tool("http://ok", null, "MCP");
+        var ruleWithNullAllowed = new ToolRuleSnapshotDTO();
+        ruleWithNullAllowed.setToolName("tool-a");
+        ruleWithNullAllowed.setAllowed(null);
+        tool.setToolRules(List.of(ruleWithNullAllowed));
+
+        Method method = McpService.class.getDeclaredMethod("filterByRules", ToolSnapshotDTO.class, List.class);
+        method.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        List<ToolSpecification> result = (List<ToolSpecification>) method.invoke(service, tool,
+                List.of(toolSpec("tool-a")));
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void formatToolNames_truncatesLongList() throws Exception {
+        var service = serviceWithConfig();
+        Method method = McpService.class.getDeclaredMethod("formatToolNames", List.class);
+        method.setAccessible(true);
+
+        List<String> names = IntStream.range(0, 25).mapToObj(i -> "tool-" + i).toList();
+
+        String result = (String) method.invoke(service, names);
+
+        assertThat(result).startsWith("tool-0, tool-1, tool-2, tool-3, tool-4, tool-5, tool-6, tool-7, tool-8, tool-9");
+        assertThat(result).endsWith("... and 15 more");
     }
 
     @Test
