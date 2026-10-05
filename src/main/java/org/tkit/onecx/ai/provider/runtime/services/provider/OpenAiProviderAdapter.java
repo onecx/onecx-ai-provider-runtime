@@ -11,9 +11,7 @@ import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderSnapshotDTO;
-import lombok.extern.slf4j.Slf4j;
 
-@Slf4j
 @ApplicationScoped
 public class OpenAiProviderAdapter implements ProviderAdapter {
 
@@ -44,7 +42,7 @@ public class OpenAiProviderAdapter implements ProviderAdapter {
                 .apiKey(provider.getApiKey())
                 .modelName(modelName)
                 .timeout(Duration.ofSeconds(providerTimeoutSeconds()))
-                .maxRetries(providerMaxRetries())
+                .maxRetries(ProviderRetryConfig.maxRetries(dispatchConfig, "OPENAI"))
                 .logRequests(dispatchConfig.providerConfig().logRequests())
                 .logResponses(dispatchConfig.providerConfig().logResponse());
         if (!isBlank(provider.getLlmUrl())) {
@@ -55,15 +53,6 @@ public class OpenAiProviderAdapter implements ProviderAdapter {
 
     private long providerTimeoutSeconds() {
         return dispatchConfig.providerConfig().timeout();
-    }
-
-    private int providerMaxRetries() {
-        long configured = dispatchConfig.providerConfig().maxRetries();
-        if (configured < 0) {
-            log.warn("Invalid provider max-retries={}; using 0", configured);
-            return 0;
-        }
-        return configured > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) configured;
     }
 
 }
