@@ -195,10 +195,12 @@ public class McpService {
                 missingRules.add(spec.name());
             } else if (rule.getAllowed() == null) {
                 incompleteRules.add(spec.name());
-            } else if (rule.getAllowed() == ToolRuleSnapshotDTO.AllowedEnum.DENY) {
-                explicitDeny.add(spec.name());
-            } else {
+            } else if (rule.getAllowed() == ToolRuleSnapshotDTO.AllowedEnum.ALLOW
+                    || rule.getAllowed() == ToolRuleSnapshotDTO.AllowedEnum.ALWAYS_ASK) {
                 allowed.add(spec);
+            } else {
+                // DENY and any unrecognized future value are treated as denied
+                explicitDeny.add(spec.name());
             }
         }
         logToolRuleDecisions(serverName, missingRules, explicitDeny, incompleteRules);

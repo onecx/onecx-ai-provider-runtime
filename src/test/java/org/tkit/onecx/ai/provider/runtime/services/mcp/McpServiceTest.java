@@ -937,6 +937,22 @@ class McpServiceTest {
     }
 
     @Test
+    void filterByRules_withExplicitDenyRule_excludesTool() throws Exception {
+        var service = serviceWithConfig(true, false);
+
+        var tool = tool("http://ok", null, "MCP");
+        tool.setToolRules(List.of(rule("tool-a", ToolRuleSnapshotDTO.AllowedEnum.DENY)));
+
+        Method method = McpService.class.getDeclaredMethod("filterByRules", ToolSnapshotDTO.class, List.class);
+        method.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        List<ToolSpecification> result = (List<ToolSpecification>) method.invoke(service, tool,
+                List.of(toolSpec("tool-a")));
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
     void formatToolNames_truncatesLongList() throws Exception {
         var service = serviceWithConfig();
         Method method = McpService.class.getDeclaredMethod("formatToolNames", List.class);
