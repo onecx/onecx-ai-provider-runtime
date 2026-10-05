@@ -946,8 +946,9 @@ class McpServiceTest {
 
         String result = (String) method.invoke(service, names);
 
-        assertThat(result).startsWith("tool-0, tool-1, tool-2, tool-3, tool-4, tool-5, tool-6, tool-7, tool-8, tool-9");
-        assertThat(result).endsWith("... and 15 more");
+        assertThat(result)
+                .startsWith("tool-0, tool-1, tool-2, tool-3, tool-4, tool-5, tool-6, tool-7, tool-8, tool-9")
+                .endsWith("... and 15 more");
     }
 
     @Test

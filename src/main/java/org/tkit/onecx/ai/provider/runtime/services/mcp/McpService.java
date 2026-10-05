@@ -188,17 +188,13 @@ public class McpService {
             ToolRuleSnapshotDTO rule = ruleMap.get(spec.name());
             if (rule == null) {
                 missingRules.add(spec.name());
-                continue;
-            }
-            if (rule.getAllowed() == null) {
+            } else if (rule.getAllowed() == null) {
                 incompleteRules.add(spec.name());
-                continue;
-            }
-            if (rule.getAllowed() == ToolRuleSnapshotDTO.AllowedEnum.DENY) {
+            } else if (rule.getAllowed() == ToolRuleSnapshotDTO.AllowedEnum.DENY) {
                 explicitDeny.add(spec.name());
-                continue;
+            } else {
+                allowed.add(spec);
             }
-            allowed.add(spec);
         }
         logToolRuleDecisions(serverName, missingRules, explicitDeny, incompleteRules);
         return List.copyOf(allowed);
