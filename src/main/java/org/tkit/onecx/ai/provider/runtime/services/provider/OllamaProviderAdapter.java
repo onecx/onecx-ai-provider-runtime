@@ -14,9 +14,7 @@ import dev.langchain4j.model.ollama.OllamaChatModel;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderSnapshotDTO;
 import io.quarkiverse.langchain4j.jaxrsclient.JaxRsHttpClientBuilderFactory;
-import lombok.extern.slf4j.Slf4j;
 
-@Slf4j
 @ApplicationScoped
 public class OllamaProviderAdapter implements ProviderAdapter {
 
@@ -48,7 +46,7 @@ public class OllamaProviderAdapter implements ProviderAdapter {
                 .modelName(modelName)
                 .customHeaders(createCustomHeaders(provider))
                 .timeout(Duration.ofSeconds(dispatchConfig.providerConfig().timeout()))
-                .maxRetries(providerMaxRetries())
+                .maxRetries(ProviderRetryConfig.maxRetries(dispatchConfig, "OLLAMA"))
                 .logRequests(dispatchConfig.providerConfig().logRequests())
                 .logResponses(dispatchConfig.providerConfig().logResponse())
                 .httpClientBuilder(new JaxRsHttpClientBuilderFactory().create())
@@ -61,15 +59,6 @@ public class OllamaProviderAdapter implements ProviderAdapter {
             headers.put("Authorization", provider.getApiKey());
         }
         return headers;
-    }
-
-    private int providerMaxRetries() {
-        long configured = dispatchConfig.providerConfig().maxRetries();
-        if (configured < 0) {
-            log.warn("Invalid provider max-retries={}; using 0", configured);
-            return 0;
-        }
-        return configured > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) configured;
     }
 
 }

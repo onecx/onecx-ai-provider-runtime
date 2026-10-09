@@ -59,37 +59,41 @@ public class McpService {
     private List<McpTool> discoverToolsFromServer(ToolSnapshotDTO tool, Map<String, String> propagatedHeaders) {
         try {
             McpClient client = createMcpClient(tool, propagatedHeaders);
-            try {
-                client.checkHealth();
-                List<ToolSpecification> specs = filterByRules(tool, receiveToolSpecifications(client));
-                if (specs.isEmpty()) {
-                    closeQuietly(client);
-                    return List.of();
-                }
-                Map<String, ToolRuleSnapshotDTO> ruleMap = rulesByName(tool);
-                String executionPolicy = tool.getExecutionPolicy() != null ? tool.getExecutionPolicy().value()
-                        : null;
-                return specs.stream()
-                        .map(spec -> {
-                            ToolRuleSnapshotDTO rule = ruleMap.get(spec.name());
-                            String allowed = rule != null && rule.getAllowed() != null
-                                    ? rule.getAllowed().value()
-                                    : null;
-                            return new McpTool(tool.getName(), tool.getUrl(), spec, client,
-                                    executionPolicy, allowed);
-                        })
-                        .toList();
-            } catch (Exception ex) {
-                closeQuietly(client);
-                log.warn("MCP server not available {}: {}: {}", tool.getUrl(), ex.getClass().getSimpleName(),
-                        ex.getMessage());
-                log.debug("MCP server availability failure details for {}", tool.getUrl(), ex);
-                return List.of();
-            }
+            return discoverToolsWithClient(tool, client);
         } catch (Exception ex) {
             log.warn("Error discovering tools from {}: {}: {}", tool.getUrl(), ex.getClass().getSimpleName(),
                     ex.getMessage());
             log.debug("MCP tool discovery failure details for {}", tool.getUrl(), ex);
+            return List.of();
+        }
+    }
+
+    private List<McpTool> discoverToolsWithClient(ToolSnapshotDTO tool, McpClient client) {
+        try {
+            client.checkHealth();
+            List<ToolSpecification> specs = filterByRules(tool, receiveToolSpecifications(client));
+            if (specs.isEmpty()) {
+                closeQuietly(client);
+                return List.of();
+            }
+            Map<String, ToolRuleSnapshotDTO> ruleMap = rulesByName(tool);
+            String executionPolicy = tool.getExecutionPolicy() != null ? tool.getExecutionPolicy().value()
+                    : null;
+            return specs.stream()
+                    .map(spec -> {
+                        ToolRuleSnapshotDTO rule = ruleMap.get(spec.name());
+                        String allowed = rule != null && rule.getAllowed() != null
+                                ? rule.getAllowed().value()
+                                : null;
+                        return new McpTool(tool.getName(), tool.getUrl(), spec, client,
+                                executionPolicy, allowed);
+                    })
+                    .toList();
+        } catch (Exception ex) {
+            closeQuietly(client);
+            log.warn("MCP server not available {}: {}: {}", tool.getUrl(), ex.getClass().getSimpleName(),
+                    ex.getMessage());
+            log.debug("MCP server availability failure details for {}", tool.getUrl(), ex);
             return List.of();
         }
     }
@@ -100,6 +104,7 @@ public class McpService {
         return client.listTools();
     }
 
+    @SuppressWarnings("java:S1172")
     protected List<ToolSpecification> receiveToolSpecificationsFallback(McpClient client) {
         log.warn("Failed to receive MCP tool specifications after retries: {}",
                 dispatchConfig.toolConfig().maxToolExecutionRetries());
@@ -161,32 +166,69 @@ public class McpService {
         }
     }
 
+    private static final int MAX_LOGGED_TOOL_NAMES = 10;
+
     private List<ToolSpecification> filterByRules(ToolSnapshotDTO tool, List<ToolSpecification> specifications) {
         if (!dispatchConfig.toolConfig().enforcementEnabled()) {
             return specifications;
         }
+        String serverName = tool.getName();
         List<ToolRuleSnapshotDTO> rules = tool.getToolRules();
         if (rules == null || rules.isEmpty()) {
             if (dispatchConfig.toolConfig().legacyAllowAll()) {
                 log.warn("MCP server '{}' has no tool rules configured — legacy allow-all in effect",
-                        tool.getName());
+                        serverName);
                 return specifications;
             }
+            log.info("MCP server '{}' has no tool rules configured — {} tool(s) denied by default",
+                    serverName, specifications.size());
             return List.of();
         }
         Map<String, ToolRuleSnapshotDTO> ruleMap = rulesByName(tool);
-        return specifications.stream()
-                .filter(spec -> {
-                    ToolRuleSnapshotDTO rule = ruleMap.get(spec.name());
-                    if (rule == null) {
-                        log.info("Tool '{}' on MCP server '{}' has no rule — denied by default", spec.name(),
-                                tool.getName());
-                        return false;
-                    }
-                    return rule.getAllowed() == ToolRuleSnapshotDTO.AllowedEnum.ALLOW
-                            || rule.getAllowed() == ToolRuleSnapshotDTO.AllowedEnum.ALWAYS_ASK;
-                })
-                .toList();
+        List<String> missingRules = new ArrayList<>();
+        List<String> explicitDeny = new ArrayList<>();
+        List<String> incompleteRules = new ArrayList<>();
+        List<ToolSpecification> allowed = new ArrayList<>();
+        for (ToolSpecification spec : specifications) {
+            ToolRuleSnapshotDTO rule = ruleMap.get(spec.name());
+            if (rule == null) {
+                missingRules.add(spec.name());
+            } else if (rule.getAllowed() == null) {
+                incompleteRules.add(spec.name());
+            } else if (rule.getAllowed() == ToolRuleSnapshotDTO.AllowedEnum.ALLOW
+                    || rule.getAllowed() == ToolRuleSnapshotDTO.AllowedEnum.ALWAYS_ASK) {
+                allowed.add(spec);
+            } else {
+                // DENY and any unrecognized future value are treated as denied
+                explicitDeny.add(spec.name());
+            }
+        }
+        logToolRuleDecisions(serverName, missingRules, explicitDeny, incompleteRules);
+        return List.copyOf(allowed);
+    }
+
+    private void logToolRuleDecisions(String serverName, List<String> missingRules, List<String> explicitDeny,
+            List<String> incompleteRules) {
+        if (!missingRules.isEmpty()) {
+            log.info("MCP server '{}': {} tool(s) have no rule — denied by default: {}",
+                    serverName, missingRules.size(), formatToolNames(missingRules));
+        }
+        if (!explicitDeny.isEmpty()) {
+            log.debug("MCP server '{}': {} tool(s) explicitly denied by rule: {}",
+                    serverName, explicitDeny.size(), formatToolNames(explicitDeny));
+        }
+        if (!incompleteRules.isEmpty()) {
+            log.warn("MCP server '{}': {} tool(s) have a rule with null 'allowed' — treated as denied: {}",
+                    serverName, incompleteRules.size(), formatToolNames(incompleteRules));
+        }
+    }
+
+    private String formatToolNames(List<String> names) {
+        if (names.size() <= MAX_LOGGED_TOOL_NAMES) {
+            return String.join(", ", names);
+        }
+        List<String> head = names.subList(0, MAX_LOGGED_TOOL_NAMES);
+        return String.join(", ", head) + " ... and " + (names.size() - MAX_LOGGED_TOOL_NAMES) + " more";
     }
 
     private Map<String, ToolRuleSnapshotDTO> rulesByName(ToolSnapshotDTO tool) {

@@ -11,9 +11,7 @@ import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.chat.ChatModel;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ProviderSnapshotDTO;
-import lombok.extern.slf4j.Slf4j;
 
-@Slf4j
 @ApplicationScoped
 public class AnthropicProviderAdapter implements ProviderAdapter {
 
@@ -44,22 +42,13 @@ public class AnthropicProviderAdapter implements ProviderAdapter {
                 .apiKey(provider.getApiKey())
                 .modelName(modelName)
                 .timeout(Duration.ofSeconds(dispatchConfig.providerConfig().timeout()))
-                .maxRetries(providerMaxRetries())
+                .maxRetries(ProviderRetryConfig.maxRetries(dispatchConfig, "ANTHROPIC"))
                 .logRequests(dispatchConfig.providerConfig().logRequests())
                 .logResponses(dispatchConfig.providerConfig().logResponse());
         if (!isBlank(provider.getLlmUrl())) {
             builder.baseUrl(provider.getLlmUrl());
         }
         return builder.build();
-    }
-
-    private int providerMaxRetries() {
-        long configured = dispatchConfig.providerConfig().maxRetries();
-        if (configured < 0) {
-            log.warn("Invalid provider max-retries={}; using 0", configured);
-            return 0;
-        }
-        return configured > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) configured;
     }
 
 }
