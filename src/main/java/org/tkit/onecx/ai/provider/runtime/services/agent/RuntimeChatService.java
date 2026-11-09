@@ -51,7 +51,6 @@ import dev.langchain4j.agentic.scope.ResultWithAgenticScope;
 import dev.langchain4j.agentic.supervisor.SupervisorAgent;
 import dev.langchain4j.agentic.supervisor.SupervisorContextStrategy;
 import dev.langchain4j.agentic.supervisor.SupervisorResponseStrategy;
-import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
@@ -60,6 +59,7 @@ import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.UserMessage;
+import dev.langchain4j.service.tool.ToolErrorHandlerResult;
 import dev.langchain4j.service.tool.ToolExecutor;
 import dev.langchain4j.skills.Skills;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentGroupSnapshotDTO;
@@ -323,6 +323,14 @@ public class RuntimeChatService {
                 .userMessageProvider(input -> userMessage(request, inputMessage(input, extractUserMessage(request))))
                 .maxSequentialToolsInvocations(maxSequentialToolInvocations())
                 .chatMemoryProvider(chatMemoryProvider());
+        builder.toolExecutionErrorHandler((error, context) -> {
+            Throwable cause = rootCause(error);
+            if (cause instanceof RuntimeChatException structured) {
+                throw structured;
+            }
+            return ToolErrorHandlerResult.text(
+                    !isBlank(error.getMessage()) ? error.getMessage() : error.getClass().getName());
+        });
         if (!toolExecutors.isEmpty()) {
             builder.tools(toolExecutors);
         }
@@ -491,6 +499,9 @@ public class RuntimeChatService {
             return result != null ? result.toString() : "";
         } catch (Exception ex) {
             Throwable cause = rootCause(ex);
+            if (cause instanceof RuntimeChatException structured) {
+                throw structured;
+            }
             log.warn("Delegate agent '{}' failed: {}: {}", delegate.name(), cause.getClass().getSimpleName(),
                     cause.getMessage());
             log.debug("Delegate agent '{}' failure details", delegate.name(), ex);
@@ -891,7 +902,7 @@ public class RuntimeChatService {
         if (throwable == null) {
             result = new RuntimeException("unknown failure");
         } else {
-            while (result.getCause() != null && result.getCause() != result) {
+            while (!(result instanceof RuntimeChatException) && result.getCause() != null && result.getCause() != result) {
                 result = result.getCause();
             }
         }
@@ -946,7 +957,7 @@ public class RuntimeChatService {
                 return response;
             }
             return response.toBuilder()
-                    .aiMessage(AiMessage.from(toolRequests))
+                    .aiMessage(response.aiMessage().toBuilder().text(null).toolExecutionRequests(toolRequests).build())
                     .build();
         }
     }

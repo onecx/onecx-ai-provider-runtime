@@ -80,7 +80,15 @@ paths:
               schema:
                 $ref: '#/components/schemas/RuntimeChatResponse'
         "400":
-          description: Bad runtime request
+          description: Bad runtime request, oversized model configuration, or unsupported OpenAI request feature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailResponse'
+        "502":
+          description: >-
+            OpenAI endpoint rejection (RUNTIME_MODEL_ENDPOINT_REJECTED) or provider failure
+            (RUNTIME_MODEL_PROVIDER_FAILED). Provider error bodies and credentials are not returned.
           content:
             application/json:
               schema:
@@ -214,6 +222,13 @@ components:
           type: string
         modelConfig:
           type: string
+          description: >-
+            Per-model JSON envelope, limited to 255 characters. OpenAI supports only api
+            (chat-completions or responses; absent defaults to chat-completions) and optional
+            string reasoningEffort (trimmed; blank is omitted). Missing configuration uses defaults.
+            Unsupported legacy JSON shapes or malformed existing configuration are warned about
+            and treated as unset. Other providers do not apply these settings.
+          example: '{"api":"responses","reasoningEffort":"medium"}'
         communicationMode:
           type: string
         provider:
