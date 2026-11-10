@@ -51,7 +51,6 @@ import dev.langchain4j.agentic.scope.ResultWithAgenticScope;
 import dev.langchain4j.agentic.supervisor.SupervisorAgent;
 import dev.langchain4j.agentic.supervisor.SupervisorContextStrategy;
 import dev.langchain4j.agentic.supervisor.SupervisorResponseStrategy;
-import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
@@ -60,6 +59,7 @@ import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.UserMessage;
+import dev.langchain4j.service.tool.ToolErrorHandlerResult;
 import dev.langchain4j.service.tool.ToolExecutor;
 import dev.langchain4j.skills.Skills;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.AgentGroupSnapshotDTO;
@@ -80,6 +80,12 @@ public class RuntimeChatService {
     static final String ALWAYS_ASK = "ALWAYS_ASK";
 
     private static final String LANGUAGE_DIRECTIVE = "Always respond in the same language as the user's message.";
+
+    private static final Set<String> CONFIGURATION_ERROR_CODES = Set.of(
+            "RUNTIME_MODEL_ENDPOINT_REJECTED",
+            "RUNTIME_MODEL_CONFIG_INVALID",
+            "RUNTIME_MODEL_FEATURE_UNSUPPORTED",
+            "RUNTIME_MODEL_REQUEST_INVALID");
 
     private static final String CONFIRMATION_PROMPT_TEMPLATE = """
             Does the following user message indicate explicit confirmation \
@@ -323,6 +329,14 @@ public class RuntimeChatService {
                 .userMessageProvider(input -> userMessage(request, inputMessage(input, extractUserMessage(request))))
                 .maxSequentialToolsInvocations(maxSequentialToolInvocations())
                 .chatMemoryProvider(chatMemoryProvider());
+        builder.toolExecutionErrorHandler((error, context) -> {
+            RuntimeChatException configurationFailure = configurationFailure(error);
+            if (configurationFailure != null) {
+                throw configurationFailure;
+            }
+            return ToolErrorHandlerResult.text(
+                    !isBlank(error.getMessage()) ? error.getMessage() : error.getClass().getName());
+        });
         if (!toolExecutors.isEmpty()) {
             builder.tools(toolExecutors);
         }
@@ -490,6 +504,10 @@ public class RuntimeChatService {
                     .result();
             return result != null ? result.toString() : "";
         } catch (Exception ex) {
+            RuntimeChatException configurationFailure = configurationFailure(ex);
+            if (configurationFailure != null) {
+                throw configurationFailure;
+            }
             Throwable cause = rootCause(ex);
             log.warn("Delegate agent '{}' failed: {}: {}", delegate.name(), cause.getClass().getSimpleName(),
                     cause.getMessage());
@@ -497,6 +515,22 @@ public class RuntimeChatService {
             return "The peer agent '%s' could not complete the delegated request. Continue with the available information."
                     .formatted(safeString(delegate.name()));
         }
+    }
+
+    private RuntimeChatException configurationFailure(Throwable throwable) {
+        Throwable cause = throwable;
+        while (cause != null) {
+            if (cause instanceof RuntimeChatException structured
+                    && CONFIGURATION_ERROR_CODES.contains(structured.getErrorCode())) {
+                return structured;
+            }
+            Throwable next = cause.getCause();
+            if (next == cause) {
+                break;
+            }
+            cause = next;
+        }
+        return null;
     }
 
     private String invokeSingleAgent(RuntimeAgent agent, ChatRequestDTO request) {
@@ -891,7 +925,7 @@ public class RuntimeChatService {
         if (throwable == null) {
             result = new RuntimeException("unknown failure");
         } else {
-            while (result.getCause() != null && result.getCause() != result) {
+            while (!(result instanceof RuntimeChatException) && result.getCause() != null && result.getCause() != result) {
                 result = result.getCause();
             }
         }
@@ -946,7 +980,7 @@ public class RuntimeChatService {
                 return response;
             }
             return response.toBuilder()
-                    .aiMessage(AiMessage.from(toolRequests))
+                    .aiMessage(response.aiMessage().toBuilder().text(null).toolExecutionRequests(toolRequests).build())
                     .build();
         }
     }
