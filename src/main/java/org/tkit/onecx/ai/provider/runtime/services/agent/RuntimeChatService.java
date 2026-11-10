@@ -81,6 +81,12 @@ public class RuntimeChatService {
 
     private static final String LANGUAGE_DIRECTIVE = "Always respond in the same language as the user's message.";
 
+    private static final Set<String> CONFIGURATION_ERROR_CODES = Set.of(
+            "RUNTIME_MODEL_ENDPOINT_REJECTED",
+            "RUNTIME_MODEL_CONFIG_INVALID",
+            "RUNTIME_MODEL_FEATURE_UNSUPPORTED",
+            "RUNTIME_MODEL_REQUEST_INVALID");
+
     private static final String CONFIRMATION_PROMPT_TEMPLATE = """
             Does the following user message indicate explicit confirmation \
             to proceed with an action? Consider all languages. \
@@ -324,9 +330,9 @@ public class RuntimeChatService {
                 .maxSequentialToolsInvocations(maxSequentialToolInvocations())
                 .chatMemoryProvider(chatMemoryProvider());
         builder.toolExecutionErrorHandler((error, context) -> {
-            Throwable cause = rootCause(error);
-            if (cause instanceof RuntimeChatException structured) {
-                throw structured;
+            RuntimeChatException configurationFailure = configurationFailure(error);
+            if (configurationFailure != null) {
+                throw configurationFailure;
             }
             return ToolErrorHandlerResult.text(
                     !isBlank(error.getMessage()) ? error.getMessage() : error.getClass().getName());
@@ -498,16 +504,33 @@ public class RuntimeChatService {
                     .result();
             return result != null ? result.toString() : "";
         } catch (Exception ex) {
-            Throwable cause = rootCause(ex);
-            if (cause instanceof RuntimeChatException structured) {
-                throw structured;
+            RuntimeChatException configurationFailure = configurationFailure(ex);
+            if (configurationFailure != null) {
+                throw configurationFailure;
             }
+            Throwable cause = rootCause(ex);
             log.warn("Delegate agent '{}' failed: {}: {}", delegate.name(), cause.getClass().getSimpleName(),
                     cause.getMessage());
             log.debug("Delegate agent '{}' failure details", delegate.name(), ex);
             return "The peer agent '%s' could not complete the delegated request. Continue with the available information."
                     .formatted(safeString(delegate.name()));
         }
+    }
+
+    private RuntimeChatException configurationFailure(Throwable throwable) {
+        Throwable cause = throwable;
+        while (cause != null) {
+            if (cause instanceof RuntimeChatException structured
+                    && CONFIGURATION_ERROR_CODES.contains(structured.getErrorCode())) {
+                return structured;
+            }
+            Throwable next = cause.getCause();
+            if (next == cause) {
+                break;
+            }
+            cause = next;
+        }
+        return null;
     }
 
     private String invokeSingleAgent(RuntimeAgent agent, ChatRequestDTO request) {

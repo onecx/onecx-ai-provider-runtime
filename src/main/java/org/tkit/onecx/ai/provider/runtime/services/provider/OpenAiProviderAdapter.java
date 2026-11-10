@@ -41,7 +41,7 @@ public class OpenAiProviderAdapter implements ProviderAdapter {
         if (isBlank(modelName)) {
             throw new IllegalArgumentException("Agent model has no model identifier configured");
         }
-        OpenAiModelConfig config = OpenAiModelConfig.parse(agent.getModel().getModelConfig());
+        OpenAiModelConfig config = OpenAiModelConfig.parse(agent.getModel().getModelConfig(), modelName);
         Duration timeout = Duration.ofSeconds(providerTimeoutSeconds());
         var httpClient = new JaxRsHttpClientBuilder();
         httpClient.connectTimeout(timeout).readTimeout(timeout);
@@ -52,9 +52,11 @@ public class OpenAiProviderAdapter implements ProviderAdapter {
                     .modelName(modelName)
                     .reasoningEffort(config.reasoningEffort())
                     .store(false)
-                    .include(List.of("reasoning.encrypted_content"))
                     .logRequests(dispatchConfig.providerConfig().logRequests())
                     .logResponses(dispatchConfig.providerConfig().logResponse());
+            if (includesEncryptedReasoning(config.reasoningEffort())) {
+                responses.include(List.of("reasoning.encrypted_content"));
+            }
             if (!isBlank(provider.getLlmUrl())) {
                 responses.baseUrl(provider.getLlmUrl());
             }
@@ -79,6 +81,10 @@ public class OpenAiProviderAdapter implements ProviderAdapter {
 
     private long providerTimeoutSeconds() {
         return dispatchConfig.providerConfig().timeout();
+    }
+
+    private boolean includesEncryptedReasoning(String reasoningEffort) {
+        return !isBlank(reasoningEffort) && !"none".equalsIgnoreCase(reasoningEffort);
     }
 
 }

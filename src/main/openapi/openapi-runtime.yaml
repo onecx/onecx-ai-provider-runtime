@@ -226,6 +226,8 @@ components:
             Per-model JSON envelope, limited to 255 characters. OpenAI supports only api
             (chat-completions or responses; absent defaults to chat-completions) and optional
             string reasoningEffort (trimmed; blank is omitted). Missing configuration uses defaults.
+            Responses requests reasoning.encrypted_content when a non-none reasoning effort is
+            explicitly configured, preserving encrypted reasoning for tool continuations.
             Unsupported legacy JSON shapes or malformed existing configuration are warned about
             and treated as unset. Other providers do not apply these settings.
           example: '{"api":"responses","reasoningEffort":"medium"}'

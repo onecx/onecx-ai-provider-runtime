@@ -106,7 +106,8 @@ class OpenAiTransportTest {
 
     @ParameterizedTest
     @ValueSource(strings = { "{\"api\":\"responses\"}", "{\"api\":\"responses\",\"reasoningEffort\":\" \"}",
-            "{\"api\":\"responses\",\"reasoningEffort\":\" none \"}" })
+            "{\"api\":\"responses\",\"reasoningEffort\":\" none \"}",
+            "{\"api\":\"responses\",\"reasoningEffort\":\" medium \"}" })
     void responsesUsesSelectedPathAndReasoningEnvelope(String config) {
         response = responsesText();
         assertThat(model(config).chat("hello")).isEqualTo("done");
@@ -119,10 +120,16 @@ class OpenAiTransportTest {
         assertThat(payload.has("reasoning_effort")).isFalse();
         if (config.contains("none")) {
             assertThat(payload.path("reasoning").path("effort").asText()).isEqualTo("none");
+        } else if (config.contains("medium")) {
+            assertThat(payload.path("reasoning").path("effort").asText()).isEqualTo("medium");
         } else {
             assertThat(payload.path("reasoning").has("effort")).isFalse();
         }
-        assertThat(payload.path("include").toString()).contains("reasoning.encrypted_content");
+        if (config.contains("medium")) {
+            assertThat(payload.path("include").toString()).contains("reasoning.encrypted_content");
+        } else {
+            assertThat(payload.has("include")).isFalse();
+        }
         assertThat(payload.path("store").asBoolean(true)).isFalse();
     }
 
@@ -147,6 +154,7 @@ class OpenAiTransportTest {
                 .isInstanceOfSatisfying(RuntimeChatException.class, ex -> {
                     assertThat(ex.getStatusCode()).isEqualTo(502);
                     assertThat(ex.getErrorCode()).isEqualTo("RUNTIME_MODEL_ENDPOINT_REJECTED");
+                    assertThat(ex.getDetail()).isEqualTo("OpenAI endpoint rejected the request (HTTP " + status + ")");
                     assertThat(ex.getDetail()).doesNotContain("sk-private", "secret provider body");
                     assertThat(ex.getCause()).isNull();
                 });

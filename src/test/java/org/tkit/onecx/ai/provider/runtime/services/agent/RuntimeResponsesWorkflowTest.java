@@ -50,10 +50,21 @@ import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.RuntimeChatReque
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ScaffoldSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.SkillSnapshotDTO;
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.QuarkusTestProfile;
+import io.quarkus.test.junit.TestProfile;
 
 @QuarkusTest
+@TestProfile(RuntimeResponsesWorkflowTest.ProviderTimeoutTestProfile.class)
 @GenerateKeycloakClient(clientName = "responsesTestClient", scopes = { "ocx-agent:write" })
 class RuntimeResponsesWorkflowTest extends AbstractTest {
+
+    public static class ProviderTimeoutTestProfile implements QuarkusTestProfile {
+
+        @Override
+        public Map<String, String> getConfigOverrides() {
+            return Map.of("onecx.ai.dispatch.provider.timeout", "1");
+        }
+    }
 
     private static final ObjectMapper JSON = new ObjectMapper();
     @Inject
@@ -68,6 +79,10 @@ class RuntimeResponsesWorkflowTest extends AbstractTest {
     private String toolArguments;
     private int status = 200;
     private String rejectedModel;
+    private String failedModel;
+    private int failureStatus = 500;
+    private String delayedModel;
+    private long delayMillis;
     private boolean textToolCalls;
 
     @BeforeEach
@@ -87,7 +102,16 @@ class RuntimeResponsesWorkflowTest extends AbstractTest {
             JsonNode request = JSON.readTree(exchange.getRequestBody());
             requests.add(request);
             paths.add(exchange.getRequestURI().getPath());
-            int responseStatus = request.path("model").asText().equals(rejectedModel) ? 404 : status;
+            String model = request.path("model").asText();
+            int responseStatus = model.equals(rejectedModel) ? 404
+                    : model.equals(failedModel) ? failureStatus : status;
+            if (model.equals(delayedModel) && delayMillis > 0) {
+                try {
+                    Thread.sleep(delayMillis);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                }
+            }
             boolean root = "root".equals(request.path("model").asText());
             String output = root && requests.size() == 1 && toolName != null
                     ? """
@@ -112,9 +136,14 @@ class RuntimeResponsesWorkflowTest extends AbstractTest {
                     """.formatted(requests.size(), output)
                     : "{\"error\":{\"message\":\"secret sk-private\"}}").getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(responseStatus, response.length);
-            exchange.getResponseBody().write(response);
-            exchange.close();
+            try {
+                exchange.sendResponseHeaders(responseStatus, response.length);
+                exchange.getResponseBody().write(response);
+            } catch (IOException ignored) {
+                // The client may close the exchange after its configured timeout.
+            } finally {
+                exchange.close();
+            }
         });
         server.start();
     }
@@ -226,15 +255,48 @@ class RuntimeResponsesWorkflowTest extends AbstractTest {
         toolName = "delegate_peer";
         toolArguments = "{\"message\":\"focused task\"}";
         rejectedModel = "peer";
-        var root = agent("root");
-        root.setA2aEnabled(true);
-        var group = new AgentGroupSnapshotDTO();
-        group.setName("team");
-        group.setAgents(List.of(agent("peer")));
-        root.setGroups(List.of(group));
-        assertThatThrownBy(() -> service.chat(request(root)))
+        assertThatThrownBy(() -> service.chat(request(rootWithPeerDelegate())))
                 .isInstanceOfSatisfying(RuntimeChatException.class,
                         ex -> assertThat(ex.getErrorCode()).isEqualTo("RUNTIME_MODEL_ENDPOINT_REJECTED"));
+        assertThat(paths).containsExactly("/v1/responses", "/v1/responses");
+    }
+
+    @Test
+    void delegateProviderFailureFallsBackAndSupervisorAnswers() {
+        toolName = "delegate_peer";
+        toolArguments = "{\"message\":\"focused task\"}";
+        failedModel = "peer";
+        assertThat(service.chat(request(rootWithPeerDelegate())).getMessage()).isEqualTo("final answer");
+        assertThat(paths).containsExactly("/v1/responses", "/v1/responses", "/v1/responses");
+        assertThat(requests.get(1).path("model").asText()).isEqualTo("peer");
+        assertThat(requests.getLast().path("model").asText()).isEqualTo("root");
+    }
+
+    @Test
+    void delegateTimeoutFallsBackAndSupervisorAnswers() {
+        toolName = "delegate_peer";
+        toolArguments = "{\"message\":\"focused task\"}";
+        delayedModel = "peer";
+        delayMillis = 2_000;
+        assertThat(service.chat(request(rootWithPeerDelegate())).getMessage()).isEqualTo("final answer");
+        assertThat(paths).containsExactly("/v1/responses", "/v1/responses", "/v1/responses");
+        assertThat(requests.get(1).path("model").asText()).isEqualTo("peer");
+        assertThat(requests.getLast().path("model").asText()).isEqualTo("root");
+    }
+
+    @Test
+    void nestedProviderFailureInToolHandlerDoesNotAbortSupervisor() {
+        toolName = "lookup";
+        toolArguments = "{\"query\":\"hello\"}";
+        var specification = ToolSpecification.builder().name(toolName)
+                .parameters(JsonObjectSchema.builder().addStringProperty("query").required("query").build()).build();
+        McpClient mcp = mock(McpClient.class);
+        when(mcp.executeTool(any())).thenThrow(new CompletionException(new RuntimeChatException(
+                "RUNTIME_MODEL_PROVIDER_FAILED", "ProviderFailure", "Safe provider failure",
+                Response.Status.BAD_GATEWAY)));
+        when(service.mcpService.createToolRegistry(any(), any()))
+                .thenReturn(new McpToolRegistry(List.of(new McpTool("test", "local", specification, mcp))));
+        assertThat(service.chat(request(agent("root"))).getMessage()).isEqualTo("final answer");
         assertThat(paths).containsExactly("/v1/responses", "/v1/responses");
     }
 
@@ -306,6 +368,16 @@ class RuntimeResponsesWorkflowTest extends AbstractTest {
         agent.setName(name);
         agent.setModel(model);
         return agent;
+    }
+
+    private AgentSnapshotDTO rootWithPeerDelegate() {
+        var root = agent("root");
+        root.setA2aEnabled(true);
+        var group = new AgentGroupSnapshotDTO();
+        group.setName("team");
+        group.setAgents(List.of(agent("peer")));
+        root.setGroups(List.of(group));
+        return root;
     }
 
     private RuntimeChatRequestDTO request(AgentSnapshotDTO root) {

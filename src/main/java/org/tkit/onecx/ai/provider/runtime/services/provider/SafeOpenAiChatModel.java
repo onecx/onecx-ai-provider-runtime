@@ -73,7 +73,7 @@ class SafeOpenAiChatModel implements ChatModel {
             if (cause instanceof HttpException http && REJECTION_STATUSES.contains(http.statusCode())) {
                 return new NonRetriableException(new RuntimeChatException("RUNTIME_MODEL_ENDPOINT_REJECTED",
                         "ProviderEndpointRejection",
-                        "OpenAI endpoint rejected the selected API or request settings; check model configuration",
+                        "OpenAI endpoint rejected the request (HTTP " + http.statusCode() + ")",
                         Response.Status.BAD_GATEWAY));
             }
             if (cause instanceof IllegalArgumentException) {

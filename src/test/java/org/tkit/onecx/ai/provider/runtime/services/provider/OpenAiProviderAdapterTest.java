@@ -6,6 +6,12 @@ import static org.tkit.onecx.ai.provider.runtime.services.provider.ProviderAdapt
 import static org.tkit.onecx.ai.provider.runtime.services.provider.ProviderAdapterTestSupport.dispatchConfig;
 import static org.tkit.onecx.ai.provider.runtime.services.provider.ProviderAdapterTestSupport.provider;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
+
 import jakarta.inject.Inject;
 
 import org.junit.jupiter.api.Test;
@@ -53,6 +59,37 @@ class OpenAiProviderAdapterTest extends AbstractTest {
         assertThatThrownBy(() -> adapter.createChatModel(agent("OPENAI", "http://localhost:8080/v1", "", "sk-test")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Agent model has no model identifier configured");
+    }
+
+    @Test
+    void legacyConfigurationWarningIdentifiesModelWithoutLoggingConfigurationOrCredentials() {
+        List<String> messages = new ArrayList<>();
+        Logger logger = Logger.getLogger(OpenAiModelConfig.class.getName());
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                messages.add(record.getMessage());
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        logger.addHandler(handler);
+        try {
+            var snapshot = agent("OPENAI", null, "gpt-4o\r\nWARNING forged", "sk-private");
+            snapshot.getModel().setModelConfig("{\"unknown\":\"private-config\",\"apiKey\":\"sk-private\"}");
+            adapter.createChatModel(snapshot);
+        } finally {
+            logger.removeHandler(handler);
+        }
+        assertThat(messages).hasSize(1);
+        assertThat(messages.getFirst()).contains("gpt-4o__WARNING forged")
+                .doesNotContain("private-config", "sk-private", "\r", "\n");
     }
 
     @Test

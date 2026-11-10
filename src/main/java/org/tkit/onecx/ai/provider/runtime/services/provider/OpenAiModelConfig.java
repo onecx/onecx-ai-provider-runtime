@@ -23,7 +23,7 @@ record OpenAiModelConfig(boolean responses, String reasoningEffort) {
     private static final Set<String> KEYS = Set.of("api", "reasoningEffort");
     private static final OpenAiModelConfig DEFAULT = new OpenAiModelConfig(false, null);
 
-    static OpenAiModelConfig parse(String value) {
+    static OpenAiModelConfig parse(String value, String modelIdentifier) {
         if (value == null) {
             return DEFAULT;
         }
@@ -37,33 +37,35 @@ record OpenAiModelConfig(boolean responses, String reasoningEffort) {
         try {
             JsonNode config = JSON.readTree(value);
             if (!config.isObject()) {
-                return legacy();
+                return legacy(modelIdentifier);
             }
             var fields = config.fieldNames();
             while (fields.hasNext()) {
                 if (!KEYS.contains(fields.next())) {
-                    return legacy();
+                    return legacy(modelIdentifier);
                 }
             }
             JsonNode api = config.get("api");
             if (api != null && (!api.isTextual()
                     || !Set.of("chat-completions", "responses").contains(api.textValue()))) {
-                return legacy();
+                return legacy(modelIdentifier);
             }
             JsonNode effort = config.get("reasoningEffort");
             if (effort != null && !effort.isTextual()) {
-                return legacy();
+                return legacy(modelIdentifier);
             }
             String reasoning = effort == null ? null : effort.textValue().trim();
             return new OpenAiModelConfig(api != null && "responses".equals(api.textValue()),
                     reasoning == null || reasoning.isEmpty() ? null : reasoning);
         } catch (JsonProcessingException ex) {
-            return legacy();
+            return legacy(modelIdentifier);
         }
     }
 
-    private static OpenAiModelConfig legacy() {
-        LOG.warn("Legacy OpenAI modelConfig is unsupported and is not applied; save supported settings to replace it");
+    private static OpenAiModelConfig legacy(String modelIdentifier) {
+        String safeIdentifier = modelIdentifier == null ? "unknown" : modelIdentifier.replaceAll("[\\p{Cntrl}]", "_");
+        LOG.warnf("Legacy OpenAI modelConfig for model '%s' is unsupported and is not applied; "
+                + "save supported settings to replace it", safeIdentifier);
         return DEFAULT;
     }
 }
