@@ -463,6 +463,49 @@ class McpServiceTest {
     }
 
     @Test
+    void discoverTools_exposesRequiredPermissionFromToolMeta() {
+        var service = new TestableMcpService();
+        service.dispatchConfig = dispatchConfig();
+        service.mcpPropagatedHeaders = mock(McpPropagatedHeaders.class);
+        when(service.mcpPropagatedHeaders.currentHeaders()).thenReturn(Map.of());
+
+        var withPermission = toolSpec("tool-a");
+        var specWithMeta = ToolSpecification.builder()
+                .name("tool-b")
+                .description("tool-b")
+                .addMetadata("requiredPermission", "onecx:event#mcp-read")
+                .build();
+        McpClient client = mock(McpClient.class);
+        when(client.listTools()).thenReturn(List.of(withPermission, specWithMeta));
+        service.registerClient("http://mcp", client);
+
+        ToolDiscoveryRequestDTO request = new ToolDiscoveryRequestDTO();
+        request.setUrl("http://mcp");
+
+        var tools = service.discoverTools(request).getTools();
+        assertThat(tools).extracting(DiscoveredToolDTO::getName).containsExactly("tool-a", "tool-b");
+        assertThat(tools.get(0).getRequiredPermission()).isNull();
+        assertThat(tools.get(1).getRequiredPermission()).isEqualTo("onecx:event#mcp-read");
+    }
+
+    @Test
+    void toRequiredPermission_ignoresMissingBlankOrNonStringValues() throws Exception {
+        var service = serviceWithConfig();
+        assertThat(invokeToRequiredPermission(service, null)).isNull();
+        assertThat(invokeToRequiredPermission(service, Map.of())).isNull();
+        assertThat(invokeToRequiredPermission(service, Map.of("requiredPermission", " "))).isNull();
+        assertThat(invokeToRequiredPermission(service, Map.of("requiredPermission", 42))).isNull();
+        assertThat(invokeToRequiredPermission(service, Map.of("requiredPermission", "onecx:x#mcp-read")))
+                .isEqualTo("onecx:x#mcp-read");
+    }
+
+    private String invokeToRequiredPermission(McpService service, Map<String, Object> metadata) throws Exception {
+        Method method = McpService.class.getDeclaredMethod("toRequiredPermission", Map.class);
+        method.setAccessible(true);
+        return (String) method.invoke(service, metadata);
+    }
+
+    @Test
     void toAnnotations_returnsNullForNullAndEmptyMetadata() throws Exception {
         var service = serviceWithConfig();
         assertThat(invokeToAnnotations(service, null)).isNull();

@@ -320,6 +320,9 @@ components:
           type: string
         annotations:
           $ref: '#/components/schemas/DiscoveredToolAnnotations'
+        requiredPermission:
+          type: string
+          description: OneCX permission the user needs to call this tool, published by the MCP server in tool _meta. Absent when the server publishes none.
     DiscoveredToolAnnotations:
       type: object
       properties:

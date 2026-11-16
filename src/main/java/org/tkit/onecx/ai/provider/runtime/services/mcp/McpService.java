@@ -155,6 +155,7 @@ public class McpService {
                 dto.setName(spec.name());
                 dto.setDescription(spec.description());
                 dto.setAnnotations(toAnnotations(spec.metadata()));
+                dto.setRequiredPermission(toRequiredPermission(spec.metadata()));
                 return dto;
             }).toList();
             ToolDiscoveryResponseDTO response = new ToolDiscoveryResponseDTO();
@@ -167,6 +168,9 @@ public class McpService {
     }
 
     private static final int MAX_LOGGED_TOOL_NAMES = 10;
+
+    // Key of the OneCX permission the MCP server publishes in tool _meta
+    private static final String REQUIRED_PERMISSION_META_KEY = "requiredPermission";
 
     private List<ToolSpecification> filterByRules(ToolSnapshotDTO tool, List<ToolSpecification> specifications) {
         if (!dispatchConfig.toolConfig().enforcementEnabled()) {
@@ -265,6 +269,17 @@ public class McpService {
             annotations.setOpenWorldHint(true);
         }
         return annotations;
+    }
+
+    private String toRequiredPermission(Map<String, Object> metadata) {
+        if (metadata == null) {
+            return null;
+        }
+        Object value = metadata.get(REQUIRED_PERMISSION_META_KEY);
+        if (value instanceof String permission && !permission.isBlank()) {
+            return permission;
+        }
+        return null;
     }
 
     private boolean boolMeta(Map<String, Object> metadata, String key) {
