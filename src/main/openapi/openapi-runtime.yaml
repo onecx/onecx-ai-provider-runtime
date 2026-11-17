@@ -270,6 +270,12 @@ components:
           type: string
         authMode:
           type: string
+        productName:
+          type: string
+          description: OneCX product name used for permission lookups of internal MCP tools
+        appId:
+          type: string
+          description: OneCX application id used for permission lookups of internal MCP tools
         executionPolicy:
           type: string
           enum:

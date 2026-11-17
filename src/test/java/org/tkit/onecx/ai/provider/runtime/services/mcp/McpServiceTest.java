@@ -31,6 +31,7 @@ import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.DiscoveredToolDT
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolDiscoveryRequestDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolRuleSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolSnapshotDTO;
+import gen.org.tkit.onecx.permission.api.PermissionApi;
 import io.quarkiverse.langchain4j.mcp.auth.McpClientAuthProvider;
 import io.quarkus.test.junit.QuarkusTest;
 
@@ -1115,7 +1116,15 @@ class McpServiceTest {
         service.dispatchConfig = dispatchConfig(enforcementEnabled, legacyAllowAll);
         service.mcpAuthHeaders = new McpAuthHeaders();
         service.mcpPropagatedHeaders = new McpPropagatedHeaders();
+        service.permissionGate = permissionGate(service.dispatchConfig, mock(PermissionApi.class));
         return service;
+    }
+
+    private static McpToolPermissionGate permissionGate(DispatchConfig dispatchConfig, PermissionApi permissionApi) {
+        var gate = new McpToolPermissionGate();
+        gate.dispatchConfig = dispatchConfig;
+        gate.permissionApi = permissionApi;
+        return gate;
     }
 
     private static DispatchConfig dispatchConfig() {
@@ -1171,6 +1180,10 @@ class McpServiceTest {
         private final Map<String, McpClient> clients = new HashMap<>();
         private final Map<String, RuntimeException> creationErrors = new HashMap<>();
         private Map<String, String> lastPropagatedHeaders;
+
+        {
+            permissionGate = permissionGate(mock(DispatchConfig.class), mock(PermissionApi.class));
+        }
 
         void registerClient(String url, McpClient client) {
             clients.put(url, client);

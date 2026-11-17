@@ -15,6 +15,9 @@ quarkus.http.auth.permission.health.policy=permit
 quarkus.http.auth.permission.default.paths=/*
 quarkus.http.auth.permission.default.policy=authenticated
 onecx.permissions.application-id=${quarkus.application.name}
+onecx.permissions.product-name=onecx-ai-provider
+%prod.quarkus.rest-client.onecx_permission.url=http://onecx-permission-svc:8080
+%prod.quarkus.rest-client.onecx_permission.providers=io.quarkus.oidc.client.reactive.filter.OidcClientRequestReactiveFilter
 org.eclipse.microprofile.rest.client.propagateHeaders=apm-principal-token
 quarkus.fault-tolerance."org.tkit.onecx.ai.provider.runtime.services.mcp.McpService/receiveToolSpecifications".retry.max-retries=${onecx.ai.dispatch.tool.max-tool-execution-retries:3}
 quarkus.fault-tolerance."org.tkit.onecx.ai.provider.runtime.services.mcp.McpService/receiveToolSpecifications".retry.delay=${onecx.ai.dispatch.tool.tool-execution-retry-delay:1000}
@@ -22,6 +25,35 @@ quarkus.langchain4j.chat-model.provider=ollama
 %prod.quarkus.oidc-client.client-id=${quarkus.application.name}
 ----
 ====
+
+== MCP tool discovery, turn pinning and permissions
+
+Tools are discovered per turn. When a turn starts, the runtime calls `tools/list` on every MCP server configured for the agent and builds one tool registry for that turn. The registry is not changed while the turn runs, so a tool set change on an MCP server (`notifications/tools/list_changed`) or a configuration change takes effect with the next turn.
+
+The runtime computes a tool-set hash for each turn: SHA-256 over the sorted `serverName` and `toolName` pairs of the tools that remain after rule filtering and permission filtering. The hash is written to the log line `MCP tool set for turn: N tool(s), hash <hash>`. Two turns with the same hash exposed the same tools.
+
+=== Required OneCX permission per tool
+
+An MCP tool declares the OneCX permission it needs in its `tools/list` entry, in `_meta.requiredPermission`, using the form `<resource>#<action>`, for example `onecx:event#mcp-write`. Tools without this key are not gated.
+
+For each turn with at least one gated tool, the runtime asks the OneCX permission service (`PermissionApi`, REST client `onecx_permission`) for the permissions of the product and application that own the MCP server. The lookup uses the user's `apm-principal-token` header and runs at most once per product and application per turn.
+
+Gated tools are advertised only when the lookup succeeds and the user holds the required action on the resource. The gate is fail-closed:
+
+* If the principal token, product name or application ID is missing, gated tools are hidden. Other tools are kept.
+* If the permission lookup fails or times out, gated tools are hidden for that turn.
+* A malformed `requiredPermission` (not exactly one `#` with non-blank parts) is treated as not granted.
+
+The product name and application ID come from the MCP server configuration in the AI Provider service. Until that configuration reaches the runtime, gated tools of such servers stay hidden.
+
+Configuration properties:
+
+[cols="1,2"]
+|===
+| Property | Description
+| `onecx.permissions.product-name` | Product of the runtime itself. Required by the `onecx-permissions` library at startup. Default `onecx-ai-provider`.
+| `quarkus.rest-client.onecx_permission.url` | URL of `onecx-permission-svc`. Set for the `prod` profile.
+|===
 
 == Extensions
 .Extensions List
