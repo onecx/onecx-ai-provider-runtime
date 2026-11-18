@@ -61,12 +61,16 @@ public class McpToolPermissionGate {
         return spec.metadata() != null && spec.metadata().get(REQUIRED_PERMISSION_META_KEY) != null;
     }
 
+    /**
+     * Returns the declared permission, or {@code null} when the metadata value is not a string. A null value is
+     * treated as malformed and never granted, so the tool stays hidden.
+     */
     static String requiredPermission(ToolSpecification spec) {
-        return String.valueOf(spec.metadata().get(REQUIRED_PERMISSION_META_KEY));
+        return spec.metadata().get(REQUIRED_PERMISSION_META_KEY) instanceof String value ? value : null;
     }
 
     static boolean isGranted(Optional<ApplicationPermissions> permissions, String required) {
-        if (permissions.isEmpty() || permissions.get().getPermissions() == null) {
+        if (required == null || permissions.isEmpty() || permissions.get().getPermissions() == null) {
             return false;
         }
         String[] parts = required.split(SEPARATOR, -1);

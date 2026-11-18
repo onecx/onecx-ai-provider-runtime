@@ -21,18 +21,23 @@ public record McpToolRegistry(List<McpTool> tools) implements AutoCloseable {
 
     /**
      * Deterministic SHA-256 over the sorted server/tool pairs, so equal discovered tool sets get equal hashes.
+     * Each name is length-prefixed so that no name content can be confused with the field boundary.
      */
     public String toolSetHash() {
         String canonical = tools.stream()
-                .map(tool -> tool.serverName() + "\t" + tool.toolSpecification().name())
+                .map(tool -> lengthPrefixed(tool.serverName()) + lengthPrefixed(tool.toolSpecification().name()))
                 .sorted()
-                .collect(Collectors.joining("\n"));
+                .collect(Collectors.joining());
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 not available", ex);
         }
+    }
+
+    private static String lengthPrefixed(String value) {
+        return value.length() + ":" + value;
     }
 
     @Override

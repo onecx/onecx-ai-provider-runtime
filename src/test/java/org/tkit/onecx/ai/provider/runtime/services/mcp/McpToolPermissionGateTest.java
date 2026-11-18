@@ -158,6 +158,28 @@ class McpToolPermissionGateTest {
                 .isNotEqualTo(new McpToolRegistry(List.of(a, b)).toolSetHash());
     }
 
+    @Test
+    void toolSetHash_doesNotCollideWhenSeparatorCharactersAppearInNames() {
+        var splitInTool = new McpTool("a", "http://a", spec("b\tc", null), null);
+        var splitInServer = new McpTool("a\tb", "http://a", spec("c", null), null);
+
+        assertThat(new McpToolRegistry(List.of(splitInTool)).toolSetHash())
+                .isNotEqualTo(new McpToolRegistry(List.of(splitInServer)).toolSetHash());
+    }
+
+    @Test
+    void filter_hidesGatedToolWhenRequiredPermissionIsNotAString() {
+        when(permissionLookup.getApplicationPermissions(anyString(), anyString(), any()))
+                .thenReturn(permissions(Map.of("onecx:event", Set.of("mcp-write"))));
+        var nonString = ToolSpecification.builder().name("odd")
+                .addMetadata(McpToolPermissionGate.REQUIRED_PERMISSION_META_KEY, Map.of("action", "mcp-write"))
+                .build();
+
+        var result = gate.filter(tool, List.of(nonString, spec("plain", null)), HEADERS, new HashMap<>());
+
+        assertThat(result).containsExactly(spec("plain", null));
+    }
+
     private static ToolSpecification spec(String name, String requiredPermission) {
         var builder = ToolSpecification.builder().name(name);
         if (requiredPermission != null) {

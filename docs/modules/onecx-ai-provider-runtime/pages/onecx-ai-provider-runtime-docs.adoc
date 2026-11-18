@@ -17,6 +17,7 @@ quarkus.http.auth.permission.default.policy=authenticated
 onecx.permissions.application-id=${quarkus.application.name}
 onecx.permissions.product-name=onecx-ai-provider
 quarkus.cache.caffeine."onecx-tool-permissions".expire-after-write=5M
+%dev.quarkus.rest-client.onecx_permission.url=${quarkus.mockserver.endpoint}
 %prod.quarkus.rest-client.onecx_permission.url=http://onecx-permission-svc:8080
 %prod.quarkus.rest-client.onecx_permission.providers=io.quarkus.oidc.client.reactive.filter.OidcClientRequestReactiveFilter
 org.eclipse.microprofile.rest.client.propagateHeaders=apm-principal-token
@@ -45,7 +46,7 @@ Gated tools are advertised only when the lookup succeeds and the user holds the 
 
 * If the principal token, product name or application ID is missing, gated tools are hidden. Other tools are kept.
 * If the permission lookup fails or times out, gated tools are hidden for that turn.
-* A malformed `requiredPermission` (not exactly one `#` with non-blank parts) is treated as not granted.
+* A malformed `requiredPermission` (not a string, or not exactly one `#` with non-blank parts) is treated as not granted.
 
 The product name and application ID come from the MCP server configuration in the AI Provider service. Until that configuration reaches the runtime, gated tools of such servers stay hidden.
 
@@ -56,7 +57,7 @@ Configuration properties:
 | Property | Description
 | `onecx.permissions.product-name` | Product of the runtime itself. Required by the `onecx-permissions` library at startup. Default `onecx-ai-provider`.
 | `quarkus.cache.caffeine."onecx-tool-permissions".expire-after-write` | How long a permission lookup result is cached. Default `5M` (5 minutes). A permission change can take up to this long to affect tool visibility.
-| `quarkus.rest-client.onecx_permission.url` | URL of `onecx-permission-svc`. Set for the `prod` profile.
+| `quarkus.rest-client.onecx_permission.url` | URL of `onecx-permission-svc`. Set for the `prod` profile. In `dev` it points to the Quarkus mockserver, so gated tools stay hidden unless you override this URL to a permission service that returns the required permissions.
 |===
 
 == Extensions
