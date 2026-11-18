@@ -131,6 +131,12 @@ components:
           $ref: '#/components/schemas/ChatRequest'
         rootAgent:
           $ref: '#/components/schemas/AgentSnapshot'
+        configurationVersionId:
+          type: string
+          description: Identifier of the agent configuration version this turn is pinned to. Informational; recorded for turn traceability.
+        configurationDigest:
+          type: string
+          description: SHA-256 digest of the rootAgent snapshot the turn was dispatched with. Informational; recorded for turn traceability.
     RuntimeChatResponse:
       type: object
       properties:
