@@ -31,7 +31,6 @@ import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.DiscoveredToolDT
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolDiscoveryRequestDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolRuleSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolSnapshotDTO;
-import gen.org.tkit.onecx.permission.api.PermissionApi;
 import io.quarkiverse.langchain4j.mcp.auth.McpClientAuthProvider;
 import io.quarkus.test.junit.QuarkusTest;
 
@@ -743,6 +742,37 @@ class McpServiceTest {
     }
 
     @Test
+    void discoverTools_exposesRequiredPermissionFromToolSpecMetadata() {
+        var service = new TestableMcpService();
+        service.dispatchConfig = dispatchConfig();
+        service.mcpPropagatedHeaders = mock(McpPropagatedHeaders.class);
+        when(service.mcpPropagatedHeaders.currentHeaders()).thenReturn(Map.of());
+
+        McpClient client = mock(McpClient.class);
+        ToolSpecification gated = ToolSpecification.builder()
+                .name("gated-tool")
+                .description("desc")
+                .parameters(JsonObjectSchema.builder().build())
+                .metadata(Map.of("requiredPermission", "onecx:event#mcp-write"))
+                .build();
+        ToolSpecification open = ToolSpecification.builder()
+                .name("open-tool")
+                .description("desc")
+                .parameters(JsonObjectSchema.builder().build())
+                .build();
+        when(client.listTools()).thenReturn(List.of(gated, open));
+        service.registerClient("http://mcp", client);
+
+        ToolDiscoveryRequestDTO request = new ToolDiscoveryRequestDTO();
+        request.setUrl("http://mcp");
+
+        var response = service.discoverTools(request);
+        assertThat(response.getTools()).hasSize(2);
+        assertThat(response.getTools().get(0).getRequiredPermission()).isEqualTo("onecx:event#mcp-write");
+        assertThat(response.getTools().get(1).getRequiredPermission()).isNull();
+    }
+
+    @Test
     void createToolRegistry_ruleWithNullAllowed_propagatesNullAllowed() {
         var service = new TestableMcpService();
         service.dispatchConfig = dispatchConfig(false, true);
@@ -1116,14 +1146,13 @@ class McpServiceTest {
         service.dispatchConfig = dispatchConfig(enforcementEnabled, legacyAllowAll);
         service.mcpAuthHeaders = new McpAuthHeaders();
         service.mcpPropagatedHeaders = new McpPropagatedHeaders();
-        service.permissionGate = permissionGate(service.dispatchConfig, mock(PermissionApi.class));
+        service.permissionGate = permissionGate(mock(PermissionLookupService.class));
         return service;
     }
 
-    private static McpToolPermissionGate permissionGate(DispatchConfig dispatchConfig, PermissionApi permissionApi) {
+    private static McpToolPermissionGate permissionGate(PermissionLookupService permissionLookup) {
         var gate = new McpToolPermissionGate();
-        gate.dispatchConfig = dispatchConfig;
-        gate.permissionApi = permissionApi;
+        gate.permissionLookup = permissionLookup;
         return gate;
     }
 
@@ -1182,7 +1211,7 @@ class McpServiceTest {
         private Map<String, String> lastPropagatedHeaders;
 
         {
-            permissionGate = permissionGate(mock(DispatchConfig.class), mock(PermissionApi.class));
+            permissionGate = permissionGate(mock(PermissionLookupService.class));
         }
 
         void registerClient(String url, McpClient client) {

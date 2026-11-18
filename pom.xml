@@ -146,6 +146,10 @@
             <groupId>org.tkit.onecx.quarkus</groupId>
             <artifactId>onecx-permissions</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-cache</artifactId>
+        </dependency>
         <!-- DEV -->
         <dependency>
             <groupId>io.quarkiverse.mockserver</groupId>

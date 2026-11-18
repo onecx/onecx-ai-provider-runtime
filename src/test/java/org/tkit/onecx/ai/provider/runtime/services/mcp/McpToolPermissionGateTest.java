@@ -17,13 +17,10 @@ import java.util.Set;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.tkit.onecx.ai.provider.runtime.config.DispatchConfig;
 
 import dev.langchain4j.agent.tool.ToolSpecification;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolSnapshotDTO;
-import gen.org.tkit.onecx.permission.api.PermissionApi;
 import gen.org.tkit.onecx.permission.model.ApplicationPermissions;
-import io.smallrye.mutiny.Uni;
 
 class McpToolPermissionGateTest {
 
@@ -31,20 +28,15 @@ class McpToolPermissionGateTest {
     private static final String READ = "onecx:event#mcp-read";
     private static final Map<String, String> HEADERS = Map.of("apm-principal-token", "user-token");
 
-    private PermissionApi permissionApi;
+    private PermissionLookupService permissionLookup;
     private McpToolPermissionGate gate;
     private ToolSnapshotDTO tool;
 
     @BeforeEach
     void setUp() {
-        permissionApi = mock(PermissionApi.class);
-        DispatchConfig dispatchConfig = mock(DispatchConfig.class);
-        DispatchConfig.ToolConfig toolConfig = mock(DispatchConfig.ToolConfig.class);
-        when(dispatchConfig.toolConfig()).thenReturn(toolConfig);
-        when(toolConfig.maxTimeout()).thenReturn(1L);
+        permissionLookup = mock(PermissionLookupService.class);
         gate = new McpToolPermissionGate();
-        gate.permissionApi = permissionApi;
-        gate.dispatchConfig = dispatchConfig;
+        gate.permissionLookup = permissionLookup;
 
         tool = new ToolSnapshotDTO();
         tool.setName("event-management");
@@ -60,13 +52,13 @@ class McpToolPermissionGateTest {
         var result = gate.filter(tool, List.of(plain), HEADERS, new HashMap<>());
 
         assertThat(result).containsExactly(plain);
-        verifyNoInteractions(permissionApi);
+        verifyNoInteractions(permissionLookup);
     }
 
     @Test
     void filter_keepsOnlyGatedToolsTheUserHoldsAndKeepsUngatedTools() {
-        when(permissionApi.getApplicationPermissions(anyString(), anyString(), any()))
-                .thenReturn(Uni.createFrom().item(permissions(Map.of("onecx:event", Set.of("mcp-write")))));
+        when(permissionLookup.getApplicationPermissions(anyString(), anyString(), any()))
+                .thenReturn(permissions(Map.of("onecx:event", Set.of("mcp-write"))));
         var write = spec("createEvent", WRITE);
         var read = spec("getEvents", READ);
         var plain = spec("ping", null);
@@ -84,7 +76,7 @@ class McpToolPermissionGateTest {
         var result = gate.filter(tool, List.of(write, plain), Map.of(), new HashMap<>());
 
         assertThat(result).containsExactly(plain);
-        verifyNoInteractions(permissionApi);
+        verifyNoInteractions(permissionLookup);
     }
 
     @Test
@@ -95,13 +87,13 @@ class McpToolPermissionGateTest {
         var result = gate.filter(tool, List.of(write), HEADERS, new HashMap<>());
 
         assertThat(result).isEmpty();
-        verifyNoInteractions(permissionApi);
+        verifyNoInteractions(permissionLookup);
     }
 
     @Test
     void filter_failsClosedForGatedToolsButKeepsPlainTools_whenLookupFails() {
-        when(permissionApi.getApplicationPermissions(anyString(), anyString(), any()))
-                .thenReturn(Uni.createFrom().failure(new IllegalStateException("permission-svc down")));
+        when(permissionLookup.getApplicationPermissions(anyString(), anyString(), any()))
+                .thenThrow(new IllegalStateException("permission-svc down"));
         var write = spec("createEvent", WRITE);
         var plain = spec("ping", null);
 
@@ -112,8 +104,8 @@ class McpToolPermissionGateTest {
 
     @Test
     void filter_hidesToolsWithMalformedRequiredPermission() {
-        when(permissionApi.getApplicationPermissions(anyString(), anyString(), any()))
-                .thenReturn(Uni.createFrom().item(permissions(Map.of("onecx:event", Set.of("mcp-write")))));
+        when(permissionLookup.getApplicationPermissions(anyString(), anyString(), any()))
+                .thenReturn(permissions(Map.of("onecx:event", Set.of("mcp-write"))));
         var noSeparator = spec("a", "onecx:event");
         var emptyAction = spec("b", "onecx:event#");
 
@@ -124,8 +116,8 @@ class McpToolPermissionGateTest {
 
     @Test
     void filter_hidesGatedToolsWhenUserHasNoPermissionsForResource() {
-        when(permissionApi.getApplicationPermissions(anyString(), anyString(), any()))
-                .thenReturn(Uni.createFrom().item(permissions(Map.of("onecx:other", Set.of("mcp-write")))));
+        when(permissionLookup.getApplicationPermissions(anyString(), anyString(), any()))
+                .thenReturn(permissions(Map.of("onecx:other", Set.of("mcp-write"))));
 
         var result = gate.filter(tool, List.of(spec("createEvent", WRITE)), HEADERS, new HashMap<>());
 
@@ -134,14 +126,14 @@ class McpToolPermissionGateTest {
 
     @Test
     void filter_looksUpEachProductAppOncePerTurn() {
-        when(permissionApi.getApplicationPermissions(anyString(), anyString(), any()))
-                .thenReturn(Uni.createFrom().item(permissions(Map.of("onecx:event", Set.of("mcp-write")))));
+        when(permissionLookup.getApplicationPermissions(anyString(), anyString(), any()))
+                .thenReturn(permissions(Map.of("onecx:event", Set.of("mcp-write"))));
         Map<String, Optional<ApplicationPermissions>> lookups = new HashMap<>();
 
         gate.filter(tool, List.of(spec("a", WRITE)), HEADERS, lookups);
         gate.filter(tool, List.of(spec("b", WRITE)), HEADERS, lookups);
 
-        verify(permissionApi, times(1)).getApplicationPermissions(
+        verify(permissionLookup, times(1)).getApplicationPermissions(
                 org.mockito.ArgumentMatchers.eq("onecx-event-management"),
                 org.mockito.ArgumentMatchers.eq("onecx-event-management-mcp"),
                 any());

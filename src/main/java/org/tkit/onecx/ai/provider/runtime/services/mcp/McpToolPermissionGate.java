@@ -1,6 +1,5 @@
 package org.tkit.onecx.ai.provider.runtime.services.mcp;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -10,14 +9,9 @@ import java.util.Set;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
-import org.eclipse.microprofile.rest.client.inject.RestClient;
-import org.tkit.onecx.ai.provider.runtime.config.DispatchConfig;
-
 import dev.langchain4j.agent.tool.ToolSpecification;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolSnapshotDTO;
-import gen.org.tkit.onecx.permission.api.PermissionApi;
 import gen.org.tkit.onecx.permission.model.ApplicationPermissions;
-import gen.org.tkit.onecx.permission.model.PermissionRequest;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -34,11 +28,7 @@ public class McpToolPermissionGate {
     private static final String SEPARATOR = "#";
 
     @Inject
-    @RestClient
-    PermissionApi permissionApi;
-
-    @Inject
-    DispatchConfig dispatchConfig;
+    PermissionLookupService permissionLookup;
 
     /**
      * Returns the tools the user may see. The {@code lookups} map is scoped to one turn so that each
@@ -103,11 +93,7 @@ public class McpToolPermissionGate {
 
     private Optional<ApplicationPermissions> fetch(ToolSnapshotDTO tool, String product, String app, String token) {
         try {
-            Duration timeout = Duration.ofSeconds(dispatchConfig.toolConfig().maxTimeout());
-            ApplicationPermissions result = permissionApi
-                    .getApplicationPermissions(product, app, new PermissionRequest().token(token))
-                    .await().atMost(timeout);
-            return Optional.ofNullable(result);
+            return Optional.ofNullable(permissionLookup.getApplicationPermissions(product, app, token));
         } catch (Exception ex) {
             log.warn("MCP server '{}': OneCX permission lookup failed, gated tools are hidden: {}: {}",
                     tool.getName(), ex.getClass().getSimpleName(), ex.getMessage());

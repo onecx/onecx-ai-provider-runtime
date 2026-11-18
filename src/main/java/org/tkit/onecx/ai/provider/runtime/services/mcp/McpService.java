@@ -168,6 +168,8 @@ public class McpService {
                 dto.setName(spec.name());
                 dto.setDescription(spec.description());
                 dto.setAnnotations(toAnnotations(spec.metadata()));
+                dto.setRequiredPermission(
+                        McpToolPermissionGate.isGated(spec) ? McpToolPermissionGate.requiredPermission(spec) : null);
                 return dto;
             }).toList();
             ToolDiscoveryResponseDTO response = new ToolDiscoveryResponseDTO();
