@@ -1171,7 +1171,9 @@ class McpServiceTest {
         var service = new McpService();
         service.dispatchConfig = dispatchConfig(enforcementEnabled, legacyAllowAll);
         service.mcpAuthHeaders = new McpAuthHeaders();
-        service.mcpPropagatedHeaders = new McpPropagatedHeaders();
+        var propagatedHeaders = new McpPropagatedHeaders();
+        propagatedHeaders.principalTokenHeader = "apm-principal-token";
+        service.mcpPropagatedHeaders = propagatedHeaders;
         service.permissionGate = permissionGate(mock(PermissionLookupService.class));
         return service;
     }
