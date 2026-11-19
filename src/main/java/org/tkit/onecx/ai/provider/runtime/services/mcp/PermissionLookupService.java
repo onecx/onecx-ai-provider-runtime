@@ -9,8 +9,8 @@ import java.util.HexFormat;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
-import org.tkit.onecx.ai.provider.runtime.config.DispatchConfig;
 
 import gen.org.tkit.onecx.permission.api.PermissionApi;
 import gen.org.tkit.onecx.permission.model.ApplicationPermissions;
@@ -33,23 +33,22 @@ public class PermissionLookupService {
     @RestClient
     PermissionApi permissionApi;
 
-    @Inject
-    DispatchConfig dispatchConfig;
+    @ConfigProperty(name = "onecx.ai.tool-permission-timeout", defaultValue = "PT10S")
+    Duration permissionTimeout;
 
     @Inject
     @CacheName(CACHE_NAME)
     Cache cache;
 
     public ApplicationPermissions getApplicationPermissions(String product, String app, String token) {
-        Duration timeout = Duration.ofSeconds(dispatchConfig.toolConfig().maxTimeout());
         CacheKey key = new CacheKey(product, app, digest(token));
-        return cache.get(key, k -> load(product, app, token)).await().atMost(timeout);
+        return cache.get(key, k -> load(product, app, token)).await().atMost(permissionTimeout);
     }
 
     private ApplicationPermissions load(String product, String app, String token) {
         ApplicationPermissions result = permissionApi
                 .getApplicationPermissions(product, app, new PermissionRequest().token(token))
-                .await().atMost(Duration.ofSeconds(dispatchConfig.toolConfig().maxTimeout()));
+                .await().atMost(permissionTimeout);
         if (result == null) {
             throw new IllegalStateException("OneCX permission service returned no permissions for " + product + "/" + app);
         }

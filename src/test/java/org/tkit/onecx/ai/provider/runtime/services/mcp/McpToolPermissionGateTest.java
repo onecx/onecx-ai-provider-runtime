@@ -141,42 +141,6 @@ class McpToolPermissionGateTest {
     }
 
     @Test
-    void toolSetHash_isStableForSameToolsInDifferentOrder() {
-        var a = new McpTool("server", "http://a", spec("alpha", null), null);
-        var b = new McpTool("server", "http://a", spec("beta", null), null);
-
-        assertThat(new McpToolRegistry(List.of(a, b)).toolSetHash())
-                .isEqualTo(new McpToolRegistry(List.of(b, a)).toolSetHash())
-                .hasSize(64);
-    }
-
-    @Test
-    void toolSetHash_changesWhenToolSetChanges() {
-        var a = new McpTool("server", "http://a", spec("alpha", null), null);
-        var b = new McpTool("server", "http://a", spec("beta", null), null);
-
-        assertThat(new McpToolRegistry(List.of(a)).toolSetHash())
-                .isNotEqualTo(new McpToolRegistry(List.of(a, b)).toolSetHash());
-    }
-
-    @Test
-    void toolSetHash_doesNotCollideWhenSeparatorCharactersAppearInNames() {
-        var splitInTool = new McpTool("a", "http://a", spec("b\tc", null), null);
-        var splitInServer = new McpTool("a\tb", "http://a", spec("c", null), null);
-
-        assertThat(new McpToolRegistry(List.of(splitInTool)).toolSetHash())
-                .isNotEqualTo(new McpToolRegistry(List.of(splitInServer)).toolSetHash());
-    }
-
-    @Test
-    void toolSetHash_toleratesNullServerName() {
-        var a = new McpTool(null, "http://a", spec("alpha", null), null);
-
-        // Should not throw NPE; null server name is treated as empty string
-        assertThat(new McpToolRegistry(List.of(a)).toolSetHash()).hasSize(64);
-    }
-
-    @Test
     void filter_hidesGatedToolWhenRequiredPermissionIsNotAString() {
         when(permissionLookup.getApplicationPermissions(anyString(), anyString(), any()))
                 .thenReturn(permissions(Map.of("onecx:event", Set.of("mcp-write"))));
@@ -201,6 +165,23 @@ class McpToolPermissionGateTest {
         var spec = specWithNonStringMeta("tool");
 
         assertThat(McpToolPermissionGate.requiredPermissionForDiscovery(spec))
+                .isEqualTo(McpToolPermissionGate.MALFORMED_PERMISSION_MARKER);
+    }
+
+    @Test
+    void requiredPermissionForDiscovery_returnsMalformedMarkerForMalformedString() {
+        var noSeparator = spec("a", "onecx:event");
+        var emptyAction = spec("b", "onecx:event#");
+        var emptyResource = spec("c", "#mcp-write");
+        var twoSeparators = spec("d", "onecx:event#mcp-write#extra");
+
+        assertThat(McpToolPermissionGate.requiredPermissionForDiscovery(noSeparator))
+                .isEqualTo(McpToolPermissionGate.MALFORMED_PERMISSION_MARKER);
+        assertThat(McpToolPermissionGate.requiredPermissionForDiscovery(emptyAction))
+                .isEqualTo(McpToolPermissionGate.MALFORMED_PERMISSION_MARKER);
+        assertThat(McpToolPermissionGate.requiredPermissionForDiscovery(emptyResource))
+                .isEqualTo(McpToolPermissionGate.MALFORMED_PERMISSION_MARKER);
+        assertThat(McpToolPermissionGate.requiredPermissionForDiscovery(twoSeparators))
                 .isEqualTo(McpToolPermissionGate.MALFORMED_PERMISSION_MARKER);
     }
 

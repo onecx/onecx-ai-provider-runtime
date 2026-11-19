@@ -78,26 +78,44 @@ public class McpToolPermissionGate {
      * Returns the declared permission for discovery responses. Unlike {@link #requiredPermission}, a non-string
      * metadata value is reported as {@link #MALFORMED_PERMISSION_MARKER} so the discovery output matches runtime
      * behavior: the tool is gated (hidden) at runtime, and the discovery response shows it as gated with a
-     * malformed marker instead of {@code null} (which would imply ungated).
+     * malformed marker instead of {@code null} (which would imply ungated). A string that does not match the
+     * {@code <resource>#<action>} format is also reported as {@link #MALFORMED_PERMISSION_MARKER}, mirroring the
+     * format validation in {@link #isGranted}.
      */
     static String requiredPermissionForDiscovery(ToolSpecification spec) {
         Object value = spec.metadata() != null ? spec.metadata().get(REQUIRED_PERMISSION_META_KEY) : null;
         if (value == null) {
             return null;
         }
-        return value instanceof String s ? s : MALFORMED_PERMISSION_MARKER;
+        if (!(value instanceof String s)) {
+            return MALFORMED_PERMISSION_MARKER;
+        }
+        return parsePermission(s) != null ? s : MALFORMED_PERMISSION_MARKER;
     }
 
     static boolean isGranted(Optional<ApplicationPermissions> permissions, String required) {
-        if (required == null || permissions.isEmpty() || permissions.get().getPermissions() == null) {
-            return false;
-        }
-        String[] parts = required.split(SEPARATOR, -1);
-        if (parts.length != 2 || parts[0].isBlank() || parts[1].isBlank()) {
+        String[] parts = parsePermission(required);
+        if (parts == null || permissions.isEmpty() || permissions.get().getPermissions() == null) {
             return false;
         }
         Set<String> actions = permissions.get().getPermissions().get(parts[0]);
         return actions != null && actions.contains(parts[1]);
+    }
+
+    /**
+     * Splits the permission string on the {@code #} separator and validates the {@code <resource>#<action>}
+     * format. Returns the two non-blank parts, or {@code null} when the value is {@code null} or malformed
+     * (missing separator, more than one separator, or blank resource/action).
+     */
+    static String[] parsePermission(String required) {
+        if (required == null) {
+            return null;
+        }
+        String[] parts = required.split(SEPARATOR, -1);
+        if (parts.length != 2 || parts[0].isBlank() || parts[1].isBlank()) {
+            return null;
+        }
+        return parts;
     }
 
     private Optional<ApplicationPermissions> lookup(ToolSnapshotDTO tool, Map<String, String> headers,
