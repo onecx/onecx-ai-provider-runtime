@@ -37,7 +37,8 @@ public record McpToolRegistry(List<McpTool> tools) implements AutoCloseable {
     }
 
     private static String lengthPrefixed(String value) {
-        return value.length() + ":" + value;
+        String safe = value != null ? value : "";
+        return safe.length() + ":" + safe;
     }
 
     @Override

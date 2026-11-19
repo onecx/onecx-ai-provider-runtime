@@ -140,7 +140,6 @@ class McpPropagatedHeadersTest {
         assertThat(second).containsEntry("apm-principal-token", "new-token");
     }
 
-    @SuppressWarnings("unchecked")
     private static McpPropagatedHeaders headers() {
         var headers = new McpPropagatedHeaders();
         headers.principalTokenHeader = "apm-principal-token";

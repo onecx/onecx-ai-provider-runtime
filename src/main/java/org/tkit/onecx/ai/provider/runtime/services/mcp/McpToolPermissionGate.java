@@ -26,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 public class McpToolPermissionGate {
 
     static final String REQUIRED_PERMISSION_META_KEY = "requiredPermission";
+    static final String MALFORMED_PERMISSION_MARKER = "<malformed>";
     private static final String SEPARATOR = "#";
 
     @ConfigProperty(name = "tkit.rs.context.token.header-param")
@@ -35,8 +36,8 @@ public class McpToolPermissionGate {
     PermissionLookupService permissionLookup;
 
     /**
-     * Returns the tools the user may see. The {@code lookups} map is scoped to one turn so that each
-     * product/application pair is queried at most once per turn.
+     * Returns the tools the user may see. The {@code lookups} map is scoped to one agent build so that each
+     * product/application pair is queried at most once per agent; the 5-minute cache absorbs repeats across agents.
      */
     public List<ToolSpecification> filter(ToolSnapshotDTO tool, List<ToolSpecification> specs,
             Map<String, String> headers, Map<String, Optional<ApplicationPermissions>> lookups) {
@@ -79,8 +80,6 @@ public class McpToolPermissionGate {
      * behavior: the tool is gated (hidden) at runtime, and the discovery response shows it as gated with a
      * malformed marker instead of {@code null} (which would imply ungated).
      */
-    static final String MALFORMED_PERMISSION_MARKER = "<malformed>";
-
     static String requiredPermissionForDiscovery(ToolSpecification spec) {
         Object value = spec.metadata() != null ? spec.metadata().get(REQUIRED_PERMISSION_META_KEY) : null;
         if (value == null) {

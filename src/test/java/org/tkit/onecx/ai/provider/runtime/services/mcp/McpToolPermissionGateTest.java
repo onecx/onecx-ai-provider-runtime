@@ -169,6 +169,14 @@ class McpToolPermissionGateTest {
     }
 
     @Test
+    void toolSetHash_toleratesNullServerName() {
+        var a = new McpTool(null, "http://a", spec("alpha", null), null);
+
+        // Should not throw NPE; null server name is treated as empty string
+        assertThat(new McpToolRegistry(List.of(a)).toolSetHash()).hasSize(64);
+    }
+
+    @Test
     void filter_hidesGatedToolWhenRequiredPermissionIsNotAString() {
         when(permissionLookup.getApplicationPermissions(anyString(), anyString(), any()))
                 .thenReturn(permissions(Map.of("onecx:event", Set.of("mcp-write"))));

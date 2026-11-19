@@ -53,7 +53,7 @@ public class McpService {
         }
 
         Map<String, String> headers = propagatedHeaders != null ? propagatedHeaders : Map.of();
-        // one permission lookup per product/app for this turn
+        // one permission lookup per product/app for this agent; the 5-minute cache absorbs repeats across agents
         Map<String, Optional<ApplicationPermissions>> permissionLookups = new HashMap<>();
         List<McpTool> allTools = new ArrayList<>();
         for (ToolSnapshotDTO tool : agent.getTools()) {
@@ -62,7 +62,8 @@ public class McpService {
             }
         }
         McpToolRegistry registry = new McpToolRegistry(allTools);
-        log.info("MCP tool set for turn: {} tool(s), hash {}", allTools.size(), registry.toolSetHash());
+        log.info("MCP tool set for agent '{}': {} tool(s), hash {}", agent.getName(), allTools.size(),
+                registry.toolSetHash());
         return registry;
     }
 

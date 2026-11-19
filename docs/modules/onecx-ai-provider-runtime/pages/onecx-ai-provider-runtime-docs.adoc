@@ -32,22 +32,22 @@ quarkus.langchain4j.chat-model.provider=ollama
 
 == MCP tool discovery, turn pinning and permissions
 
-Tools are discovered per turn. When a turn starts, the runtime calls `tools/list` on every MCP server configured for the agent and builds one tool registry for that turn. The registry is not changed while the turn runs, so a tool set change on an MCP server (`notifications/tools/list_changed`) or a configuration change takes effect with the next turn.
+Tools are discovered per agent build. When an agent is built, the runtime calls `tools/list` on every MCP server configured for that agent and builds one tool registry for it. The registry is not changed while the agent runs, so a tool set change on an MCP server (`notifications/tools/list_changed`) or a configuration change takes effect with the next agent build.
 
-The runtime computes a tool-set hash for each turn: SHA-256 over the sorted `serverName` and `toolName` pairs of the tools that remain after rule filtering and permission filtering. The hash is written to the log line `MCP tool set for turn: N tool(s), hash <hash>`. Two turns with the same hash exposed the same tools.
+The runtime computes a tool-set hash for each agent build: SHA-256 over the sorted `serverName` and `toolName` pairs of the tools that remain after rule filtering and permission filtering. The hash is written to the log line `MCP tool set for agent '<agent>': N tool(s), hash <hash>`. Two agent builds with the same hash exposed the same tools.
 
 === Required OneCX permission per tool
 
 An MCP tool declares the OneCX permission it needs in its `tools/list` entry, in `_meta.requiredPermission`, using the form `<resource>#<action>`, for example `onecx:event#mcp-write`. Tools without this key are not gated.
 
-For each turn with at least one gated tool, the runtime looks up the permissions of the product and application that own the MCP server through `PermissionLookupService`, which calls the OneCX permission service (`PermissionApi`, REST client `onecx_permission`). The lookup uses the user's `apm-principal-token` header.
+For each agent build with at least one gated tool, the runtime looks up the permissions of the product and application that own the MCP server through `PermissionLookupService`, which calls the OneCX permission service (`PermissionApi`, REST client `onecx_permission`). The token is taken from the user's `apm-principal-token` header and sent in the `PermissionRequest` body, because the lookup runs on an executor thread where request-scoped header propagation is not available.
 
-The lookup result is cached in the `onecx-tool-permissions` cache. The cache key is the product name, the application ID, and a SHA-256 hash of the principal token, so the raw token is not stored as a key. Entries expire 5 minutes after they are written. Concurrent lookups for the same key share one call to the permission service (single-flight). Failed lookups are not cached, so the next turn retries.
+The lookup result is cached in the `onecx-tool-permissions` cache. The cache key is the product name, the application ID, and a SHA-256 hash of the principal token, so the raw token is not stored as a key. Entries expire 5 minutes after they are written. Concurrent lookups for the same key share one call to the permission service (single-flight). Failed lookups are not cached, so the next agent build retries.
 
 Gated tools are advertised only when the lookup succeeds and the user holds the required action on the resource. The gate is fail-closed:
 
 * If the principal token, product name or application ID is missing, gated tools are hidden. Other tools are kept.
-* If the permission lookup fails or times out, gated tools are hidden for that turn.
+* If the permission lookup fails or times out, gated tools are hidden for that agent build.
 * A malformed `requiredPermission` (not a string, or not exactly one `#` with non-blank parts) is treated as not granted.
 
 The product name and application ID come from the MCP server configuration in the AI Provider service. Until that configuration reaches the runtime, gated tools of such servers stay hidden.
