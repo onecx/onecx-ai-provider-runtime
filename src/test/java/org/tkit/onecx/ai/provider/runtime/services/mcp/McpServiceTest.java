@@ -773,6 +773,32 @@ class McpServiceTest {
     }
 
     @Test
+    void discoverTools_reportsMalformedMarkerForNonStringRequiredPermission() {
+        var service = new TestableMcpService();
+        service.dispatchConfig = dispatchConfig();
+        service.mcpPropagatedHeaders = mock(McpPropagatedHeaders.class);
+        when(service.mcpPropagatedHeaders.currentHeaders()).thenReturn(Map.of());
+
+        McpClient client = mock(McpClient.class);
+        ToolSpecification malformed = ToolSpecification.builder()
+                .name("malformed-tool")
+                .description("desc")
+                .parameters(JsonObjectSchema.builder().build())
+                .metadata(Map.of("requiredPermission", 42))
+                .build();
+        when(client.listTools()).thenReturn(List.of(malformed));
+        service.registerClient("http://mcp", client);
+
+        ToolDiscoveryRequestDTO request = new ToolDiscoveryRequestDTO();
+        request.setUrl("http://mcp");
+
+        var response = service.discoverTools(request);
+        assertThat(response.getTools()).hasSize(1);
+        assertThat(response.getTools().get(0).getRequiredPermission())
+                .isEqualTo(McpToolPermissionGate.MALFORMED_PERMISSION_MARKER);
+    }
+
+    @Test
     void createToolRegistry_ruleWithNullAllowed_propagatesNullAllowed() {
         var service = new TestableMcpService();
         service.dispatchConfig = dispatchConfig(false, true);
@@ -1153,6 +1179,7 @@ class McpServiceTest {
     private static McpToolPermissionGate permissionGate(PermissionLookupService permissionLookup) {
         var gate = new McpToolPermissionGate();
         gate.permissionLookup = permissionLookup;
+        gate.principalTokenHeader = "apm-principal-token";
         return gate;
     }
 

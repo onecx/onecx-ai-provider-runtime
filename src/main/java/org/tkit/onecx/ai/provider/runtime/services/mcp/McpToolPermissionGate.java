@@ -9,6 +9,8 @@ import java.util.Set;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+
 import dev.langchain4j.agent.tool.ToolSpecification;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolSnapshotDTO;
 import gen.org.tkit.onecx.permission.model.ApplicationPermissions;
@@ -24,8 +26,10 @@ import lombok.extern.slf4j.Slf4j;
 public class McpToolPermissionGate {
 
     static final String REQUIRED_PERMISSION_META_KEY = "requiredPermission";
-    static final String PRINCIPAL_TOKEN_HEADER = "apm-principal-token";
     private static final String SEPARATOR = "#";
+
+    @ConfigProperty(name = "tkit.rs.context.token.header-param")
+    String principalTokenHeader;
 
     @Inject
     PermissionLookupService permissionLookup;
@@ -69,6 +73,22 @@ public class McpToolPermissionGate {
         return spec.metadata().get(REQUIRED_PERMISSION_META_KEY) instanceof String value ? value : null;
     }
 
+    /**
+     * Returns the declared permission for discovery responses. Unlike {@link #requiredPermission}, a non-string
+     * metadata value is reported as {@link #MALFORMED_PERMISSION_MARKER} so the discovery output matches runtime
+     * behavior: the tool is gated (hidden) at runtime, and the discovery response shows it as gated with a
+     * malformed marker instead of {@code null} (which would imply ungated).
+     */
+    static final String MALFORMED_PERMISSION_MARKER = "<malformed>";
+
+    static String requiredPermissionForDiscovery(ToolSpecification spec) {
+        Object value = spec.metadata() != null ? spec.metadata().get(REQUIRED_PERMISSION_META_KEY) : null;
+        if (value == null) {
+            return null;
+        }
+        return value instanceof String s ? s : MALFORMED_PERMISSION_MARKER;
+    }
+
     static boolean isGranted(Optional<ApplicationPermissions> permissions, String required) {
         if (required == null || permissions.isEmpty() || permissions.get().getPermissions() == null) {
             return false;
@@ -83,7 +103,7 @@ public class McpToolPermissionGate {
 
     private Optional<ApplicationPermissions> lookup(ToolSnapshotDTO tool, Map<String, String> headers,
             Map<String, Optional<ApplicationPermissions>> lookups) {
-        String token = headers != null ? headers.get(PRINCIPAL_TOKEN_HEADER) : null;
+        String token = headers != null ? headers.get(principalTokenHeader) : null;
         String product = tool.getProductName();
         String app = tool.getAppId();
         if (token == null || token.isBlank() || product == null || product.isBlank() || app == null

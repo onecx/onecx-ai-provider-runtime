@@ -37,6 +37,7 @@ class McpToolPermissionGateTest {
         permissionLookup = mock(PermissionLookupService.class);
         gate = new McpToolPermissionGate();
         gate.permissionLookup = permissionLookup;
+        gate.principalTokenHeader = "apm-principal-token";
 
         tool = new ToolSnapshotDTO();
         tool.setName("event-management");
@@ -180,12 +181,40 @@ class McpToolPermissionGateTest {
         assertThat(result).containsExactly(spec("plain", null));
     }
 
+    @Test
+    void requiredPermissionForDiscovery_returnsStringPermissionAsIs() {
+        var spec = spec("tool", "onecx:event#mcp-write");
+
+        assertThat(McpToolPermissionGate.requiredPermissionForDiscovery(spec)).isEqualTo("onecx:event#mcp-write");
+    }
+
+    @Test
+    void requiredPermissionForDiscovery_returnsMalformedMarkerForNonStringValue() {
+        var spec = specWithNonStringMeta("tool");
+
+        assertThat(McpToolPermissionGate.requiredPermissionForDiscovery(spec))
+                .isEqualTo(McpToolPermissionGate.MALFORMED_PERMISSION_MARKER);
+    }
+
+    @Test
+    void requiredPermissionForDiscovery_returnsNullWhenNotGated() {
+        var spec = spec("plain", null);
+
+        assertThat(McpToolPermissionGate.requiredPermissionForDiscovery(spec)).isNull();
+    }
+
     private static ToolSpecification spec(String name, String requiredPermission) {
         var builder = ToolSpecification.builder().name(name);
         if (requiredPermission != null) {
             builder.addMetadata(McpToolPermissionGate.REQUIRED_PERMISSION_META_KEY, requiredPermission);
         }
         return builder.build();
+    }
+
+    private static ToolSpecification specWithNonStringMeta(String name) {
+        return ToolSpecification.builder().name(name)
+                .addMetadata(McpToolPermissionGate.REQUIRED_PERMISSION_META_KEY, 42)
+                .build();
     }
 
     private static ApplicationPermissions permissions(Map<String, Set<String>> permissions) {
