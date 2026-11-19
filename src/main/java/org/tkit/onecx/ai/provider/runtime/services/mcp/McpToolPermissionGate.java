@@ -71,6 +71,9 @@ public class McpToolPermissionGate {
      * treated as malformed and never granted, so the tool stays hidden.
      */
     static String requiredPermission(ToolSpecification spec) {
+        if (spec.metadata() == null) {
+            return null;
+        }
         return spec.metadata().get(REQUIRED_PERMISSION_META_KEY) instanceof String value ? value : null;
     }
 
@@ -93,6 +96,12 @@ public class McpToolPermissionGate {
         return parsePermission(s) != null ? s : MALFORMED_PERMISSION_MARKER;
     }
 
+    /**
+     * Checks whether the resolved permissions grant the required {@code <resource>#<action>}.
+     * onecx-permission-svc does not support per-action wildcards (only an {@code allowAll} global bypass),
+     * so exact {@code <resource>#<action>} matching is the correct semantics here: there is no
+     * wildcard action to fall back to, and a missing resource entry simply means the action is not granted.
+     */
     static boolean isGranted(Optional<ApplicationPermissions> permissions, String required) {
         String[] parts = parsePermission(required);
         if (parts == null || permissions.isEmpty() || permissions.get().getPermissions() == null) {
