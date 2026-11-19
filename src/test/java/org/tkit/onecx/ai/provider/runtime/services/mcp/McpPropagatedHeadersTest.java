@@ -143,6 +143,7 @@ class McpPropagatedHeadersTest {
     private static McpPropagatedHeaders headers() {
         var headers = new McpPropagatedHeaders();
         headers.principalTokenHeader = "apm-principal-token";
+        headers.userAuthorizationHeader = "UserAuthorization";
         return headers;
     }
 

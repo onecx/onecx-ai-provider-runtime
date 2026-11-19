@@ -25,10 +25,11 @@ import io.vertx.ext.web.RoutingContext;
 @ApplicationScoped
 public class McpPropagatedHeaders {
 
-    static final String USER_AUTHORIZATION = "UserAuthorization";
-
     @ConfigProperty(name = "tkit.rs.context.token.header-param")
     String principalTokenHeader;
+
+    @ConfigProperty(name = "onecx.user-authorization-header")
+    String userAuthorizationHeader;
 
     @Inject
     Instance<RoutingContext> routingContext;
@@ -48,9 +49,9 @@ public class McpPropagatedHeaders {
             if (!isBlank(principalToken)) {
                 propagated.put(principalTokenHeader, principalToken);
             }
-            String userAuthorization = request.getHeader(USER_AUTHORIZATION);
+            String userAuthorization = request.getHeader(userAuthorizationHeader);
             if (!isBlank(userAuthorization)) {
-                propagated.put(USER_AUTHORIZATION, userAuthorization);
+                propagated.put(userAuthorizationHeader, userAuthorization);
             }
 
             if (propagated.isEmpty()) {
