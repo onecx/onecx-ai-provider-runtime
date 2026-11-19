@@ -334,7 +334,12 @@ components:
           $ref: '#/components/schemas/DiscoveredToolAnnotations'
         requiredPermission:
           type: string
-          description: OneCX permission required to invoke the tool, as published by the MCP server in tool metadata. The sentinel value `<malformed>` indicates the server declared a non-string or malformed permission value; the tool is gated at runtime.
+          description: >
+            OneCX permission required to invoke the tool, as published by the MCP server
+            in tool metadata. The sentinel value `<malformed>` indicates the server
+            declared a non-string or malformed permission value; the tool is gated at
+            runtime. This sentinel is a stable part of the contract — consumers must
+            treat `<malformed>` as a distinct value, not a real permission string.
     DiscoveredToolAnnotations:
       type: object
       properties:
