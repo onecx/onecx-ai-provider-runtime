@@ -57,6 +57,42 @@ class McpToolRegistryTest {
         verify(healthyClient).close();
     }
 
+    @Test
+    void toolSetHash_isStableForSameToolsInDifferentOrder() {
+        var a = new McpTool("server", "http://a", toolSpec("alpha"), null);
+        var b = new McpTool("server", "http://a", toolSpec("beta"), null);
+
+        assertThat(new McpToolRegistry(List.of(a, b)).toolSetHash())
+                .isEqualTo(new McpToolRegistry(List.of(b, a)).toolSetHash())
+                .hasSize(64);
+    }
+
+    @Test
+    void toolSetHash_changesWhenToolSetChanges() {
+        var a = new McpTool("server", "http://a", toolSpec("alpha"), null);
+        var b = new McpTool("server", "http://a", toolSpec("beta"), null);
+
+        assertThat(new McpToolRegistry(List.of(a)).toolSetHash())
+                .isNotEqualTo(new McpToolRegistry(List.of(a, b)).toolSetHash());
+    }
+
+    @Test
+    void toolSetHash_doesNotCollideWhenSeparatorCharactersAppearInNames() {
+        var splitInTool = new McpTool("a", "http://a", toolSpec("b\tc"), null);
+        var splitInServer = new McpTool("a\tb", "http://a", toolSpec("c"), null);
+
+        assertThat(new McpToolRegistry(List.of(splitInTool)).toolSetHash())
+                .isNotEqualTo(new McpToolRegistry(List.of(splitInServer)).toolSetHash());
+    }
+
+    @Test
+    void toolSetHash_toleratesNullServerName() {
+        var a = new McpTool(null, "http://a", toolSpec("alpha"), null);
+
+        // Should not throw NPE; null server name is treated as empty string
+        assertThat(new McpToolRegistry(List.of(a)).toolSetHash()).hasSize(64);
+    }
+
     private static ToolSpecification toolSpec(String name) {
         return ToolSpecification.builder()
                 .name(name)

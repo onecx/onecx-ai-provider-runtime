@@ -116,6 +116,18 @@ h| Version
 | https://github.com/1000kit/tkit-quarkus/blob/5.1.0/docs/modules/tkit-quarkus/pages/includes/tkit-quarkus-security.adoc[Link]
 | 5.1.0
 
+| onecx-permissions
+
+| https://onecx.github.io/docs/onecx-quarkus/current/onecx-quarkus/onecx-permissions.html[Link]
+| https://github.com/onecx/onecx-quarkus/blob/3.0.0/docs/modules/onecx-quarkus/pages/includes/onecx-permissions.adoc[Link]
+| 3.0.0
+
+| quarkus-cache
+
+| https://quarkus.io/guides/cache[Link]
+| https://github.com/quarkusio/quarkusio.github.io/blob/develop/_generated-doc/latest/config/quarkus-cache.adoc[Link]
+| 3.33.1.1
+
 | quarkus-container-image-docker
 
 | https://quarkus.io/guides/container-image[Link]

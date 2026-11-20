@@ -2,9 +2,11 @@ package org.tkit.onecx.ai.provider.runtime.services.mcp;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -26,6 +28,7 @@ import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolDiscoveryReq
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolDiscoveryResponseDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolRuleSnapshotDTO;
 import gen.org.tkit.onecx.ai.provider.runtime.rs.internal.model.ToolSnapshotDTO;
+import gen.org.tkit.onecx.permission.model.ApplicationPermissions;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -41,25 +44,34 @@ public class McpService {
     @Inject
     McpPropagatedHeaders mcpPropagatedHeaders;
 
+    @Inject
+    McpToolPermissionGate permissionGate;
+
     public McpToolRegistry createToolRegistry(AgentSnapshotDTO agent, Map<String, String> propagatedHeaders) {
         if (agent == null || agent.getTools() == null || agent.getTools().isEmpty()) {
             return McpToolRegistry.empty();
         }
 
         Map<String, String> headers = propagatedHeaders != null ? propagatedHeaders : Map.of();
+        // one permission lookup per product/app for this agent; the 5-minute cache absorbs repeats across agents
+        Map<String, Optional<ApplicationPermissions>> permissionLookups = new HashMap<>();
         List<McpTool> allTools = new ArrayList<>();
         for (ToolSnapshotDTO tool : agent.getTools()) {
             if ("MCP".equals(safeString(tool.getType()))) {
-                allTools.addAll(discoverToolsFromServer(tool, headers));
+                allTools.addAll(discoverToolsFromServer(tool, headers, permissionLookups));
             }
         }
-        return new McpToolRegistry(allTools);
+        McpToolRegistry registry = new McpToolRegistry(allTools);
+        log.info("MCP tool set for agent '{}': {} tool(s), hash {}", agent.getName(), allTools.size(),
+                registry.toolSetHash());
+        return registry;
     }
 
-    private List<McpTool> discoverToolsFromServer(ToolSnapshotDTO tool, Map<String, String> propagatedHeaders) {
+    private List<McpTool> discoverToolsFromServer(ToolSnapshotDTO tool, Map<String, String> propagatedHeaders,
+            Map<String, Optional<ApplicationPermissions>> permissionLookups) {
         try {
             McpClient client = createMcpClient(tool, propagatedHeaders);
-            return discoverToolsWithClient(tool, client);
+            return discoverToolsWithClient(tool, client, propagatedHeaders, permissionLookups);
         } catch (Exception ex) {
             log.warn("Error discovering tools from {}: {}: {}", tool.getUrl(), ex.getClass().getSimpleName(),
                     ex.getMessage());
@@ -68,10 +80,12 @@ public class McpService {
         }
     }
 
-    private List<McpTool> discoverToolsWithClient(ToolSnapshotDTO tool, McpClient client) {
+    private List<McpTool> discoverToolsWithClient(ToolSnapshotDTO tool, McpClient client,
+            Map<String, String> propagatedHeaders, Map<String, Optional<ApplicationPermissions>> permissionLookups) {
         try {
             client.checkHealth();
             List<ToolSpecification> specs = filterByRules(tool, receiveToolSpecifications(client));
+            specs = permissionGate.filter(tool, specs, propagatedHeaders, permissionLookups);
             if (specs.isEmpty()) {
                 closeQuietly(client);
                 return List.of();
@@ -155,6 +169,10 @@ public class McpService {
                 dto.setName(spec.name());
                 dto.setDescription(spec.description());
                 dto.setAnnotations(toAnnotations(spec.metadata()));
+                dto.setRequiredPermission(
+                        McpToolPermissionGate.isGated(spec)
+                                ? McpToolPermissionGate.requiredPermissionForDiscovery(spec)
+                                : null);
                 return dto;
             }).toList();
             ToolDiscoveryResponseDTO response = new ToolDiscoveryResponseDTO();

@@ -131,6 +131,12 @@ components:
           $ref: '#/components/schemas/ChatRequest'
         rootAgent:
           $ref: '#/components/schemas/AgentSnapshot'
+        configurationVersionId:
+          type: string
+          description: Identifier of the agent configuration version this turn is pinned to. Informational; recorded for turn traceability.
+        configurationDigest:
+          type: string
+          description: SHA-256 digest of the rootAgent snapshot the turn was dispatched with. Informational; recorded for turn traceability.
     RuntimeChatResponse:
       type: object
       properties:
@@ -270,6 +276,12 @@ components:
           type: string
         authMode:
           type: string
+        productName:
+          type: string
+          description: OneCX product name used for permission lookups of internal MCP tools
+        appId:
+          type: string
+          description: OneCX application id used for permission lookups of internal MCP tools
         executionPolicy:
           type: string
           enum:
@@ -320,6 +332,14 @@ components:
           type: string
         annotations:
           $ref: '#/components/schemas/DiscoveredToolAnnotations'
+        requiredPermission:
+          type: string
+          description: >
+            OneCX permission required to invoke the tool, as published by the MCP server
+            in tool metadata. The sentinel value `<malformed>` indicates the server
+            declared a non-string or malformed permission value; the tool is gated at
+            runtime. This sentinel is a stable part of the contract — consumers must
+            treat `<malformed>` as a distinct value, not a real permission string.
     DiscoveredToolAnnotations:
       type: object
       properties:

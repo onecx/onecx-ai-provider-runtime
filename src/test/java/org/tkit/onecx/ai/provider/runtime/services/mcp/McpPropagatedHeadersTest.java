@@ -21,7 +21,7 @@ class McpPropagatedHeadersTest {
 
     @Test
     void currentHeaders_returnsApmPrincipalTokenFromCurrentRequest() {
-        McpPropagatedHeaders headers = new McpPropagatedHeaders();
+        McpPropagatedHeaders headers = headers();
         headers.routingContext = routingContext("principal-token");
 
         assertThat(headers.currentHeaders()).containsEntry("apm-principal-token", "principal-token");
@@ -29,7 +29,7 @@ class McpPropagatedHeadersTest {
 
     @Test
     void currentHeaders_returnsBothConfiguredHeadersFromCurrentRequest() {
-        McpPropagatedHeaders headers = new McpPropagatedHeaders();
+        McpPropagatedHeaders headers = headers();
         headers.routingContext = routingContext("principal-token", "Bearer user-token");
 
         assertThat(headers.currentHeaders())
@@ -39,7 +39,7 @@ class McpPropagatedHeadersTest {
 
     @Test
     void currentHeaders_returnsEmpty_whenApmPrincipalTokenMissing() {
-        McpPropagatedHeaders headers = new McpPropagatedHeaders();
+        McpPropagatedHeaders headers = headers();
         headers.routingContext = routingContext(null);
 
         assertThat(headers.currentHeaders()).isEmpty();
@@ -47,7 +47,7 @@ class McpPropagatedHeadersTest {
 
     @Test
     void currentHeaders_returnsEmpty_whenRoutingContextNull() {
-        McpPropagatedHeaders headers = new McpPropagatedHeaders();
+        McpPropagatedHeaders headers = headers();
         headers.routingContext = null;
 
         assertThat(headers.currentHeaders()).isEmpty();
@@ -55,7 +55,7 @@ class McpPropagatedHeadersTest {
 
     @Test
     void currentHeaders_returnsEmpty_whenRoutingContextUnsatisfied() {
-        McpPropagatedHeaders headers = new McpPropagatedHeaders();
+        McpPropagatedHeaders headers = headers();
         @SuppressWarnings("unchecked")
         Instance<RoutingContext> unsatisfied = mock(Instance.class);
         when(unsatisfied.isUnsatisfied()).thenReturn(true);
@@ -66,7 +66,7 @@ class McpPropagatedHeadersTest {
 
     @Test
     void currentHeaders_returnsEmpty_whenRoutingContextThrowsContextNotActiveException() {
-        McpPropagatedHeaders headers = new McpPropagatedHeaders();
+        McpPropagatedHeaders headers = headers();
         @SuppressWarnings("unchecked")
         Instance<RoutingContext> instance = mock(Instance.class);
         when(instance.isUnsatisfied()).thenReturn(false);
@@ -78,7 +78,7 @@ class McpPropagatedHeadersTest {
 
     @Test
     void currentHeaders_returnsEmpty_whenRoutingContextThrowsIllegalStateException() {
-        McpPropagatedHeaders headers = new McpPropagatedHeaders();
+        McpPropagatedHeaders headers = headers();
         @SuppressWarnings("unchecked")
         Instance<RoutingContext> instance = mock(Instance.class);
         when(instance.isUnsatisfied()).thenReturn(false);
@@ -90,7 +90,7 @@ class McpPropagatedHeadersTest {
 
     @Test
     void snapshot_cachesHeaders_evenAfterRoutingContextBecomesUnavailable() {
-        McpPropagatedHeaders headers = new McpPropagatedHeaders();
+        McpPropagatedHeaders headers = headers();
         headers.routingContext = routingContext("principal-token");
 
         // Capture headers before routing context becomes unavailable
@@ -107,7 +107,7 @@ class McpPropagatedHeadersTest {
 
     @Test
     void snapshot_cachesCachedValue_onMultipleCalls() {
-        McpPropagatedHeaders headers = new McpPropagatedHeaders();
+        McpPropagatedHeaders headers = headers();
         headers.routingContext = routingContext("principal-token");
 
         // First call captures
@@ -127,7 +127,7 @@ class McpPropagatedHeadersTest {
 
     @Test
     void snapshot_cachesEmpty_whenHeaderMissing() {
-        McpPropagatedHeaders headers = new McpPropagatedHeaders();
+        McpPropagatedHeaders headers = headers();
         headers.routingContext = routingContext(null);
 
         Map<String, String> first = headers.currentHeaders();
@@ -140,7 +140,13 @@ class McpPropagatedHeadersTest {
         assertThat(second).containsEntry("apm-principal-token", "new-token");
     }
 
-    @SuppressWarnings("unchecked")
+    private static McpPropagatedHeaders headers() {
+        var headers = new McpPropagatedHeaders();
+        headers.principalTokenHeader = "apm-principal-token";
+        headers.userAuthorizationHeader = "UserAuthorization";
+        return headers;
+    }
+
     private static Instance<RoutingContext> routingContext(String token) {
         return routingContext(token, null);
     }

@@ -159,6 +159,9 @@ public class RuntimeChatService {
         // accessible from worker/managed-executor threads. We pass the captured Map explicitly
         // through the entire call-chain so no CDI scope propagation is required.
         final Map<String, String> propagatedHeaders = mcpPropagatedHeaders.currentHeaders();
+        log.info("Runtime chat turn for root agent '{}' pinned to configuration version '{}', digest '{}'",
+                request.getRootAgent().getName(), request.getConfigurationVersionId(),
+                request.getConfigurationDigest());
         CompletableFuture<RuntimeChatResponseDTO> future = CompletableFuture.supplyAsync(
                 () -> invoke(request, propagatedHeaders), runtimeExecutor());
         try {

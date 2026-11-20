@@ -15,13 +15,55 @@ quarkus.http.auth.permission.health.policy=permit
 quarkus.http.auth.permission.default.paths=/*
 quarkus.http.auth.permission.default.policy=authenticated
 onecx.permissions.application-id=${quarkus.application.name}
-org.eclipse.microprofile.rest.client.propagateHeaders=apm-principal-token
+onecx.ai.tool-permission-cache.expire-after=PT5M
+onecx.ai.tool-permission-cache.maximum-size=1000
+quarkus.cache.caffeine."onecx-tool-permissions".expire-after-write=${onecx.ai.tool-permission-cache.expire-after}
+quarkus.cache.caffeine."onecx-tool-permissions".maximum-size=${onecx.ai.tool-permission-cache.maximum-size}
+%dev.quarkus.rest-client.onecx_permission.url=${quarkus.mockserver.endpoint}
+%prod.quarkus.rest-client.onecx_permission.url=http://onecx-permission-svc:8080
+%prod.quarkus.rest-client.onecx_permission.providers=io.quarkus.oidc.client.reactive.filter.OidcClientRequestReactiveFilter
+tkit.rs.context.token.header-param=apm-principal-token
+onecx.user-authorization-header=UserAuthorization
+org.eclipse.microprofile.rest.client.propagateHeaders=${tkit.rs.context.token.header-param},${onecx.user-authorization-header}
 quarkus.fault-tolerance."org.tkit.onecx.ai.provider.runtime.services.mcp.McpService/receiveToolSpecifications".retry.max-retries=${onecx.ai.dispatch.tool.max-tool-execution-retries:3}
 quarkus.fault-tolerance."org.tkit.onecx.ai.provider.runtime.services.mcp.McpService/receiveToolSpecifications".retry.delay=${onecx.ai.dispatch.tool.tool-execution-retry-delay:1000}
 quarkus.langchain4j.chat-model.provider=ollama
 %prod.quarkus.oidc-client.client-id=${quarkus.application.name}
 ----
 ====
+
+== MCP tool discovery, turn pinning and permissions
+
+Tools are discovered per agent build. When an agent is built, the runtime calls `tools/list` on every MCP server configured for that agent and builds one tool registry for it. The registry is not changed while the agent runs, so a tool set change on an MCP server (`notifications/tools/list_changed`) or a configuration change takes effect with the next agent build.
+
+The runtime computes a tool-set hash for each agent build: SHA-256 over the sorted `serverName` and `toolName` pairs of the tools that remain after rule filtering and permission filtering. The hash is written to the log line `MCP tool set for agent '<agent>': N tool(s), hash <hash>`. Two agent builds with the same hash exposed the same tools.
+
+=== Required OneCX permission per tool
+
+An MCP tool declares the OneCX permission it needs in its `tools/list` entry, in `_meta.requiredPermission`, using the form `<resource>#<action>`, for example `onecx:event#mcp-write`. Tools without this key are not gated.
+
+For each agent build with at least one gated tool, the runtime looks up the permissions of the product and application that own the MCP server through `PermissionLookupService`, which calls the OneCX permission service (`PermissionApi`, REST client `onecx_permission`). The token is taken from the user's `apm-principal-token` header and sent in the `PermissionRequest` body, because the lookup runs on an executor thread where request-scoped header propagation is not available.
+
+The lookup result is cached in the `onecx-tool-permissions` cache. The cache key is the product name, the application ID, and the principal token as sent. The token is kept in memory as part of the key until the entry expires or is evicted. Entries expire 5 minutes after they are written. Concurrent lookups for the same key share one call to the permission service (single-flight). Failed lookups are not cached, so the next agent build retries.
+
+Gated tools are advertised only when the lookup succeeds and the user holds the required action on the resource. The gate is fail-closed:
+
+* If the principal token, product name or application ID is missing, gated tools are hidden. Other tools are kept.
+* If the permission lookup fails or times out, gated tools are hidden for that agent build.
+* A malformed `requiredPermission` (not a string, or not exactly one `#` with non-blank parts) is treated as not granted.
+
+The product name and application ID come from the MCP server configuration in the AI Provider service. Until that configuration reaches the runtime, gated tools of such servers stay hidden.
+
+Configuration properties:
+
+[cols="1,2"]
+|===
+| Property | Description
+| `onecx.ai.tool-permission-cache.expire-after` | How long a permission lookup result is cached, as an ISO-8601 duration. Default `PT5M` (5 minutes). A permission change can take up to this long to affect tool visibility. Feeds `quarkus.cache.caffeine."onecx-tool-permissions".expire-after-write`.
+| `onecx.ai.tool-permission-timeout` | Timeout for a single call to the permission service, as an ISO-8601 duration. Default `PT10S` (10 seconds). Kept separate from the MCP tool timeout so they can be tuned independently.
+| `quarkus.cache.caffeine."onecx-tool-permissions".maximum-size` | Maximum number of cached permission lookups. The cache key is per product/app/token, so this bounds memory when many distinct principal tokens are seen within the TTL. Default `1000`.
+| `quarkus.rest-client.onecx_permission.url` | URL of `onecx-permission-svc`. Set for the `prod` profile. In `dev` it points to the Quarkus mockserver, so gated tools stay hidden unless you override this URL to a permission service that returns the required permissions.
+|===
 
 == Extensions
 .Extensions List
