@@ -63,7 +63,7 @@ Configuration properties:
 | `onecx.permissions.product-name` | Product of the runtime itself. Required by the `onecx-permissions` library at startup. Default `onecx-ai-provider`.
 | `onecx.ai.tool-permission-cache.expire-after` | How long a permission lookup result is cached, as an ISO-8601 duration. Default `PT5M` (5 minutes). A permission change can take up to this long to affect tool visibility. Feeds `quarkus.cache.caffeine."onecx-tool-permissions".expire-after-write`.
 | `onecx.ai.tool-permission-timeout` | Timeout for a single call to the permission service, as an ISO-8601 duration. Default `PT10S` (10 seconds). Kept separate from the MCP tool timeout so they can be tuned independently.
-| `quarkus.cache.caffeine."onecx-tool-permissions".maximum-size` | Maximum number of cached permission lookups. The cache key is per product/app/token digest, so this bounds memory when many distinct principal tokens are seen within the TTL. Default `1000`.
+| `quarkus.cache.caffeine."onecx-tool-permissions".maximum-size` | Maximum number of cached permission lookups. The cache key is per product/app/token, so this bounds memory when many distinct principal tokens are seen within the TTL. Default `1000`.
 | `quarkus.rest-client.onecx_permission.url` | URL of `onecx-permission-svc`. Set for the `prod` profile. In `dev` it points to the Quarkus mockserver, so gated tools stay hidden unless you override this URL to a permission service that returns the required permissions.
 |===
 

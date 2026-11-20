@@ -104,14 +104,6 @@ class PermissionLookupServiceTest {
         verify(permissionApi, times(2)).getApplicationPermissions(eq(product), eq("app"), any());
     }
 
-    @Test
-    void digest_isSha256HexAndDoesNotExposeToken() {
-        String digest = PermissionLookupService.digest("secret-token");
-
-        assertThat(digest).hasSize(64).doesNotContain("secret-token");
-        assertThat(PermissionLookupService.digest("secret-token")).isEqualTo(digest);
-    }
-
     private static ApplicationPermissions permissions() {
         return new ApplicationPermissions().permissions(Map.of("onecx:event", Set.of("mcp-read")));
     }
