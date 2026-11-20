@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -68,10 +69,13 @@ class PermissionLookupServiceTest {
     void getApplicationPermissions_sharesOneRemoteCallAcrossConcurrentRequests() throws Exception {
         String product = "product-single-flight";
         AtomicInteger remoteCalls = new AtomicInteger();
+        CountDownLatch release = new CountDownLatch(1);
         when(permissionApi.getApplicationPermissions(eq(product), anyString(), any())).thenAnswer(invocation -> {
             remoteCalls.incrementAndGet();
-            Thread.sleep(200);
-            return Uni.createFrom().item(permissions());
+            return Uni.createFrom().item(() -> {
+                awaitRelease(release);
+                return permissions();
+            });
         });
 
         ExecutorService pool = Executors.newFixedThreadPool(5);
@@ -80,14 +84,35 @@ class PermissionLookupServiceTest {
             for (int i = 0; i < 5; i++) {
                 futures.add(pool.submit(() -> service.getApplicationPermissions(product, "app", "token-a")));
             }
+            release.countDown();
             for (Future<ApplicationPermissions> future : futures) {
                 assertThat(future.get()).isNotNull();
             }
         } finally {
+            release.countDown();
             pool.shutdownNow();
         }
 
         assertThat(remoteCalls.get()).isEqualTo(1);
+    }
+
+    @Test
+    void getApplicationPermissions_failsWhenServiceReturnsNoPermissions() {
+        String product = "product-null-result";
+        when(permissionApi.getApplicationPermissions(eq(product), anyString(), any()))
+                .thenReturn(Uni.createFrom().nullItem());
+
+        assertThatThrownBy(() -> service.getApplicationPermissions(product, "app", "token-null"))
+                .hasMessageContaining("returned no permissions");
+    }
+
+    private static void awaitRelease(CountDownLatch release) {
+        try {
+            release.await();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(ex);
+        }
     }
 
     @Test

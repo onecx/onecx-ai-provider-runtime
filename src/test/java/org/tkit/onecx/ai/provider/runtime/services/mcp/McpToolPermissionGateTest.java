@@ -192,6 +192,24 @@ class McpToolPermissionGateTest {
         assertThat(McpToolPermissionGate.requiredPermissionForDiscovery(spec)).isNull();
     }
 
+    @Test
+    void isGranted_returnsFalseForNullOrMalformedRequirement() {
+        var granted = Optional.of(permissions(Map.of("onecx:event", Set.of("mcp-write"))));
+
+        assertThat(McpToolPermissionGate.isGranted(granted, null)).isFalse();
+        assertThat(McpToolPermissionGate.isGranted(granted, "onecx:event#")).isFalse();
+        assertThat(McpToolPermissionGate.isGranted(granted, "onecx:event#mcp-write#extra")).isFalse();
+    }
+
+    @Test
+    void filter_hidesGatedToolWhenLookupReturnsNoPermissions() {
+        when(permissionLookup.getApplicationPermissions(anyString(), anyString(), any())).thenReturn(null);
+
+        var result = gate.filter(tool, List.of(spec("createEvent", WRITE)), HEADERS, new HashMap<>());
+
+        assertThat(result).isEmpty();
+    }
+
     private static ToolSpecification spec(String name, String requiredPermission) {
         var builder = ToolSpecification.builder().name(name);
         if (requiredPermission != null) {

@@ -93,7 +93,7 @@ public class McpToolPermissionGate {
         if (!(value instanceof String s)) {
             return MALFORMED_PERMISSION_MARKER;
         }
-        return parsePermission(s) != null ? s : MALFORMED_PERMISSION_MARKER;
+        return parsePermission(s).length == 2 ? s : MALFORMED_PERMISSION_MARKER;
     }
 
     /**
@@ -103,7 +103,7 @@ public class McpToolPermissionGate {
      */
     static boolean isGranted(Optional<ApplicationPermissions> permissions, String required) {
         String[] parts = parsePermission(required);
-        if (parts == null || permissions.isEmpty() || permissions.get().getPermissions() == null) {
+        if (parts.length != 2 || permissions.isEmpty() || permissions.get().getPermissions() == null) {
             return false;
         }
         Set<String> actions = permissions.get().getPermissions().get(parts[0]);
@@ -112,16 +112,16 @@ public class McpToolPermissionGate {
 
     /**
      * Splits the permission string on the {@code #} separator and validates the {@code <resource>#<action>}
-     * format. Returns the two non-blank parts, or {@code null} when the value is {@code null} or malformed
+     * format. Returns the two non-blank parts, or an empty array when the value is {@code null} or malformed
      * (missing separator, more than one separator, or blank resource/action).
      */
     static String[] parsePermission(String required) {
         if (required == null) {
-            return null;
+            return new String[0];
         }
         String[] parts = required.split(SEPARATOR, -1);
         if (parts.length != 2 || parts[0].isBlank() || parts[1].isBlank()) {
-            return null;
+            return new String[0];
         }
         return parts;
     }
