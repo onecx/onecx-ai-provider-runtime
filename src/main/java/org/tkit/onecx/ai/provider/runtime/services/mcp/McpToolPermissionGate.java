@@ -97,10 +97,9 @@ public class McpToolPermissionGate {
     }
 
     /**
-     * Checks whether the resolved permissions grant the required {@code <resource>#<action>}.
-     * onecx-permission-svc does not support per-action wildcards (only an {@code allowAll} global bypass),
-     * so exact {@code <resource>#<action>} matching is the correct semantics here: there is no
-     * wildcard action to fall back to, and a missing resource entry simply means the action is not granted.
+     * Checks whether the resolved permissions grant the required {@code <resource>#<action>}. The permission
+     * response maps each resource to its granted actions, so the check is an exact match: a missing resource
+     * or action means the tool is not granted.
      */
     static boolean isGranted(Optional<ApplicationPermissions> permissions, String required) {
         String[] parts = parsePermission(required);

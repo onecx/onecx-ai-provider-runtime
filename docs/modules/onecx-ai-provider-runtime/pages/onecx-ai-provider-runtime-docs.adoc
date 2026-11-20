@@ -15,7 +15,6 @@ quarkus.http.auth.permission.health.policy=permit
 quarkus.http.auth.permission.default.paths=/*
 quarkus.http.auth.permission.default.policy=authenticated
 onecx.permissions.application-id=${quarkus.application.name}
-onecx.permissions.product-name=onecx-ai-provider
 onecx.ai.tool-permission-cache.expire-after=PT5M
 onecx.ai.tool-permission-cache.maximum-size=1000
 quarkus.cache.caffeine."onecx-tool-permissions".expire-after-write=${onecx.ai.tool-permission-cache.expire-after}
@@ -60,7 +59,6 @@ Configuration properties:
 [cols="1,2"]
 |===
 | Property | Description
-| `onecx.permissions.product-name` | Product of the runtime itself. Required by the `onecx-permissions` library at startup. Default `onecx-ai-provider`.
 | `onecx.ai.tool-permission-cache.expire-after` | How long a permission lookup result is cached, as an ISO-8601 duration. Default `PT5M` (5 minutes). A permission change can take up to this long to affect tool visibility. Feeds `quarkus.cache.caffeine."onecx-tool-permissions".expire-after-write`.
 | `onecx.ai.tool-permission-timeout` | Timeout for a single call to the permission service, as an ISO-8601 duration. Default `PT10S` (10 seconds). Kept separate from the MCP tool timeout so they can be tuned independently.
 | `quarkus.cache.caffeine."onecx-tool-permissions".maximum-size` | Maximum number of cached permission lookups. The cache key is per product/app/token, so this bounds memory when many distinct principal tokens are seen within the TTL. Default `1000`.
