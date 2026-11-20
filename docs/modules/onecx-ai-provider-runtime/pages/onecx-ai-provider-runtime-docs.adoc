@@ -44,7 +44,7 @@ An MCP tool declares the OneCX permission it needs in its `tools/list` entry, in
 
 For each agent build with at least one gated tool, the runtime looks up the permissions of the product and application that own the MCP server through `PermissionLookupService`, which calls the OneCX permission service (`PermissionApi`, REST client `onecx_permission`). The token is taken from the user's `apm-principal-token` header and sent in the `PermissionRequest` body, because the lookup runs on an executor thread where request-scoped header propagation is not available.
 
-The lookup result is cached in the `onecx-tool-permissions` cache. The cache key is the product name, the application ID, and a SHA-256 hash of the principal token, so the raw token is not stored as a key. Entries expire 5 minutes after they are written. Concurrent lookups for the same key share one call to the permission service (single-flight). Failed lookups are not cached, so the next agent build retries.
+The lookup result is cached in the `onecx-tool-permissions` cache. The cache key is the product name, the application ID, and the principal token as sent. The token is kept in memory as part of the key until the entry expires or is evicted. Entries expire 5 minutes after they are written. Concurrent lookups for the same key share one call to the permission service (single-flight). Failed lookups are not cached, so the next agent build retries.
 
 Gated tools are advertised only when the lookup succeeds and the user holds the required action on the resource. The gate is fail-closed:
 
